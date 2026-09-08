@@ -3,6 +3,8 @@ import AppKit
 /// System tray (menu bar) icon manager.
 @MainActor
 final class TrayManager: NSObject {
+    private let localization = LocalizationManager.shared
+    private var languageObserver: NSObjectProtocol?
     private var statusItem: NSStatusItem?
     private let onSettings: @MainActor () -> Void
     private weak var hotkeyManager: HotkeyManager?
@@ -12,10 +14,18 @@ final class TrayManager: NSObject {
         self.onSettings = onSettings
         super.init()
         setupTray()
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: .appLanguageDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.setupTray() }
+        }
     }
 
+
     private func setupTray() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if statusItem == nil { statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength) }
 
         if let button = statusItem?.button {
             if let icon = loadMenuBarIcon() {
@@ -30,7 +40,7 @@ final class TrayManager: NSObject {
         menu.delegate = self
 
         // Hotkey submenu
-        let hotkeyItem = NSMenuItem(title: "Hotkey", action: nil, keyEquivalent: "")
+        let hotkeyItem = NSMenuItem(title: L("tray.hotkey"), action: nil, keyEquivalent: "")
         let hotkeySubmenu = NSMenu()
         for option in HotkeyConfig.options {
             let item = NSMenuItem(title: option.displayName, action: #selector(changeHotkey(_:)), keyEquivalent: "")
@@ -42,11 +52,11 @@ final class TrayManager: NSObject {
         menu.addItem(hotkeyItem)
 
         menu.addItem(NSMenuItem.separator())
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: L("tray.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit Ainto", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: L("tray.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
         statusItem?.menu = menu
     }

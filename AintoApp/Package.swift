@@ -6,6 +6,11 @@ let package = Package(
     platforms: [
         .macOS(.v14)
     ],
+    dependencies: [
+        .package(url: "https://github.com/soffes/HotKey", from: "0.2.1"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0"),
+        .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.20")
+    ],
     targets: [
         // C bridge to Rust static library
         .systemLibrary(
@@ -19,6 +24,7 @@ let package = Package(
                 "AintoCore",
                 .product(name: "HotKey", package: "HotKey"),
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             path: "Sources",
             resources: [
@@ -35,17 +41,16 @@ let package = Package(
                 .linkedFramework("AppKit"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),
+                .linkedFramework("WebKit"),
             ]
         ),
+        .testTarget(
+            name: "AintoAppTests",
+            dependencies: [
+                "AintoApp",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            ],
+            path: "Tests"
+        )
     ]
-)
-
-// HotKey library for global hotkey registration
-package.dependencies.append(
-    .package(url: "https://github.com/soffes/HotKey", from: "0.2.1")
-)
-
-// Sparkle auto-update framework
-package.dependencies.append(
-    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0")
 )

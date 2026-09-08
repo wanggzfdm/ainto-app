@@ -7,12 +7,12 @@ import Sparkle
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var searchPanel: SearchPanel?
     private var hotkeyManager: HotkeyManager?
-    private var clipboardMonitor: ClipboardMonitor?
     private var textExpander: TextExpander?
     private var trayManager: TrayManager?
     private var settingsWindow: NSWindow?
     private var configWatcherSources: [DispatchSourceFileSystemObject] = []
     private var configWatcherFDs: [Int32] = []
+    private var languageObserver: NSObjectProtocol?
 
     private var updaterController: SPUStandardUpdaterController?
 
@@ -56,12 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Spotlight/Raycast conflict warnings are handled in SettingsView
 
-        // Start clipboard monitoring
-        clipboardMonitor = ClipboardMonitor()
-        clipboardMonitor?.onClipboardChanged = { [weak self] in
-            self?.searchPanel?.viewModel.reloadClipboardIfVisible()
-        }
-        clipboardMonitor?.startMonitoring()
 
         // Start global text expansion (only while enabled in config)
         textExpander = TextExpander()
@@ -74,6 +68,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Watch ~/.config/ainto/ for external file changes (e.g. manual TOML edits)
         watchConfigDirectory()
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: .appLanguageDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshLanguage() }
+        }
     }
 
     /// Monitor config files for external changes and reload automatically.
@@ -110,9 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        clipboardMonitor?.stopMonitoring()
         textExpander?.stop()
         configWatcherSources.forEach { $0.cancel() }
+        if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) }
     }
 
     private func toggleSearchPanel() {
@@ -141,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
-        window.title = "Settings"
+        window.title = L("settings.title")
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
@@ -169,15 +170,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow = window
     }
 
-    private func initializeRustCore() {
-        // Read per-pool limits from config.toml so eviction matches what
-        // the user sees in Settings ("Max text items" / "Max image items").
-        // Falls back to the same defaults the Settings UI shows.
-        let (maxText, maxImage) = loadClipboardLimits()
-        let _ = rc_clipboard_init(UInt64(maxText), UInt64(maxImage))
+    private func refreshLanguage() {
+        settingsWindow?.title = L("settings.title")
+        searchPanel?.viewModel.refreshLocalizedContent()
+    }
 
-        // Discover apps (without icons — Swift loads icons via NSWorkspace)
-        let _ = rc_discover_apps(false)
+    /// Rust core initialization is intentionally lightweight; app discovery is
+    /// performed by SearchViewModel.refreshApps() when the panel is shown.
+    private func initializeRustCore() {
+        // Keep startup non-blocking and avoid racing the first panel refresh.
     }
 
     /// Start or stop the keystroke event tap to match `snippets_enabled` in
@@ -201,15 +202,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return dict["snippets_enabled"] as? Bool ?? true
     }
 
-    private func loadClipboardLimits() -> (text: Int, image: Int) {
-        guard let cstr = rc_config_load() else { return (200, 50) }
-        defer { rc_free_string(cstr) }
-        let json = String(cString: cstr)
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return (200, 50) }
-        let text = dict["clipboard_max_items"] as? Int ?? 200
-        let image = dict["clipboard_max_image_items"] as? Int ?? 50
-        return (text, image)
-    }
 }

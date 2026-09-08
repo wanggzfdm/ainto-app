@@ -3,6 +3,7 @@ import AppKit
 
 /// AI Commands management sub-page — mirrors SnippetView layout.
 struct AICommandView: View {
+    @ObservedObject private var localization = LocalizationManager.shared
     @ObservedObject var viewModel: SearchViewModel
     @FocusState private var isFilterFocused: Bool
 
@@ -22,7 +23,7 @@ struct AICommandView: View {
                         .foregroundStyle(.purple)
                         .font(.system(size: 16))
 
-                    Text(isNewCommand ? "Create AI Command" : "Edit AI Command")
+                    Text(isNewCommand ? L("aiCommand.create") : L("aiCommand.edit"))
                         .font(.system(size: 16, weight: .medium))
 
                     Spacer()
@@ -47,7 +48,7 @@ struct AICommandView: View {
                         .foregroundStyle(.secondary)
                         .font(.system(size: 16))
 
-                    TextField("Filter commands...", text: $viewModel.aiCommandFilter)
+                    TextField(L("aiCommand.filter"), text: $viewModel.aiCommandFilter)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .focused($isFilterFocused)
@@ -68,10 +69,10 @@ struct AICommandView: View {
                         Image(systemName: "sparkle")
                             .font(.system(size: 40))
                             .foregroundStyle(.quaternary)
-                        Text("No AI commands")
+                        Text(L("aiCommand.empty"))
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
-                        Text("Click + to create one")
+                        Text(L("aiCommand.createHint"))
                             .font(.system(size: 12))
                             .foregroundStyle(.tertiary)
                     }
@@ -129,13 +130,13 @@ struct AICommandView: View {
                 Spacer()
                 HStack(spacing: 12) {
                     if viewModel.isEditingAICommand {
-                        KeyHint(keys: ["⌘", "↵"], label: "save")
-                        KeyHint(keys: ["esc"], label: "cancel")
+                        KeyHint(keys: ["⌘", "↵"], label: L("hint.save"))
+                        KeyHint(keys: ["esc"], label: L("hint.cancel"))
                     } else {
-                        KeyHint(keys: ["⌘", "N"], label: "new")
-                        KeyHint(keys: ["⌘", "E"], label: "edit")
-                        KeyHint(keys: ["↵"], label: "run")
-                        KeyHint(keys: ["esc"], label: "back")
+                        KeyHint(keys: ["⌘", "N"], label: L("hint.new"))
+                        KeyHint(keys: ["⌘", "E"], label: L("hint.edit"))
+                        KeyHint(keys: ["↵"], label: L("hint.run"))
+                        KeyHint(keys: ["esc"], label: L("hint.back"))
                     }
                 }
             }
@@ -169,7 +170,7 @@ struct AICommandItemRow: View {
                 .foregroundStyle(isSelected ? .white : .secondary)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(command.name.isEmpty ? "Untitled" : command.name)
+                Text(command.name.isEmpty ? L("aiCommand.untitled") : command.name)
                     .font(.system(size: 13))
                     .foregroundColor(isSelected ? .white : .primary)
                     .lineLimit(1)
@@ -217,14 +218,14 @@ struct AICommandPreview: View {
 
                 // Info
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Information")
+                    Text(L("aiCommand.information"))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
 
-                    MetadataRow(label: "Name", value: command.name)
-                    MetadataRow(label: "Icon", value: command.icon)
+                    MetadataRow(label: L("aiCommand.name"), value: command.name)
+                    MetadataRow(label: L("aiCommand.icon"), value: command.icon)
                     if command.prompt.contains("{selection}") {
-                        MetadataRow(label: "Input", value: "Selected text")
+                        MetadataRow(label: L("aiCommand.input"), value: L("aiCommand.selectedText"))
                     }
                 }
                 .padding(12)
@@ -234,7 +235,7 @@ struct AICommandPreview: View {
                 // Actions
                 HStack {
                     Button(action: onEdit) {
-                        Label("Edit", systemImage: "pencil")
+                        Label(L("common.edit"), systemImage: "pencil")
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
@@ -242,7 +243,7 @@ struct AICommandPreview: View {
                     Spacer()
 
                     Button(action: { onDelete(command.id) }) {
-                        Label("Delete", systemImage: "trash")
+                        Label(L("common.delete"), systemImage: "trash")
                             .font(.system(size: 11))
                             .foregroundColor(.red)
                     }
@@ -256,7 +257,7 @@ struct AICommandPreview: View {
                 Image(systemName: "sparkle")
                     .font(.system(size: 30))
                     .foregroundStyle(.quaternary)
-                Text("Select a command")
+                Text(L("aiCommand.select"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -274,8 +275,8 @@ struct AICommandEditForm: View {
             ScrollView {
                 VStack(spacing: 20) {
                     // Name
-                    FormRow(label: "Name") {
-                        TextField("Command name", text: binding(\.name))
+                    FormRow(label: L("aiCommand.name")) {
+                        TextField(L("aiCommand.commandName"), text: binding(\.name))
                             .textFieldStyle(.plain)
                             .font(.system(size: 14))
                             .padding(.horizontal, 10)
@@ -288,8 +289,8 @@ struct AICommandEditForm: View {
                     }
 
                     // Icon (SF Symbol name)
-                    FormRow(label: "Icon") {
-                        TextField("SF Symbol name (e.g. sparkle)", text: binding(\.icon))
+                    FormRow(label: L("aiCommand.icon")) {
+                        TextField(L("aiCommand.iconPlaceholder"), text: binding(\.icon))
                             .textFieldStyle(.plain)
                             .font(.system(size: 14, design: .monospaced))
                             .padding(.horizontal, 10)
@@ -299,7 +300,7 @@ struct AICommandEditForm: View {
                     }
 
                     // Prompt
-                    FormRow(label: "Prompt") {
+                    FormRow(label: L("aiCommand.prompt")) {
                         VStack(alignment: .leading, spacing: 8) {
                             TextEditor(text: binding(\.prompt))
                                 .font(.system(size: 13))
@@ -309,7 +310,7 @@ struct AICommandEditForm: View {
                                 .background(Color.primary.opacity(0.06))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                            Text("Use `{selection}` as placeholder for the selected text from the frontmost app.")
+                            Text(L("aiCommand.selectionHint"))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }

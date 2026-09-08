@@ -30,6 +30,8 @@ const char* rc_search_apps(const char* query);
 /// Get top-ranked (most used) apps, returns JSON array string
 const char* rc_get_top_apps(uint64_t limit);
 
+/// Get all discovered apps sorted by display name, returns JSON array string
+const char* rc_get_all_apps(void);
 /// Increment ranking for any key (app path or "cmd:name"), returns new value
 int32_t rc_increment_ranking(const char* key);
 
@@ -40,49 +42,6 @@ int32_t rc_get_ranking(const char* key);
 void rc_update_ranking(const char* app_path);
 
 // ============================================================
-// Clipboard Store
-// ============================================================
-
-/// Initialize clipboard store with separate text and image quotas, returns 0 on success.
-/// `max_text_items` covers text + file entries; `max_image_items` covers images.
-int32_t rc_clipboard_init(uint64_t max_text_items, uint64_t max_image_items);
-
-/// Update eviction limits on the running store and trim immediately, returns 0 on success.
-/// Lets Settings changes take effect without restarting the app.
-int32_t rc_clipboard_set_limits(uint64_t max_text_items, uint64_t max_image_items);
-
-/// Insert text clipboard entry, returns entry ID or -1 on error
-int64_t rc_clipboard_insert_text(const char* text, const char* source_app);
-
-/// Insert image clipboard entry (PNG bytes), returns entry ID or -1 on error
-int64_t rc_clipboard_insert_image(const uint8_t* png_data, uint64_t png_len,
-                                   uint32_t width, uint32_t height,
-                                   const char* source_app);
-
-/// Insert file clipboard entry, returns entry ID or -1 on error
-int64_t rc_clipboard_insert_file(const char* path, const char* source_app);
-
-/// Get the clipboard image directory path
-const char* rc_clipboard_image_dir(void);
-
-/// Get recent clipboard entries as JSON array string
-const char* rc_clipboard_get_recent(uint64_t limit);
-
-/// Get recent clipboard entries with pagination
-const char* rc_clipboard_get_recent_paged(uint64_t limit, uint64_t offset);
-
-/// Search clipboard entries by text, returns JSON array string
-const char* rc_clipboard_search(const char* query);
-
-/// Search clipboard entries with pagination
-const char* rc_clipboard_search_paged(const char* query, uint64_t limit, uint64_t offset);
-
-/// Delete a clipboard entry by ID
-int32_t rc_clipboard_delete(int64_t id);
-
-/// Clear all entries
-int32_t rc_clipboard_clear(void);
-
 // ============================================================
 // Snippets
 // ============================================================

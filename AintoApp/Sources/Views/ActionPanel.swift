@@ -3,6 +3,7 @@ import AppKit
 
 /// Floating action panel — triggered by Cmd+K on a search result.
 struct ActionPanelView: View {
+    @ObservedObject private var localization = LocalizationManager.shared
     let title: String
     let actions: [ActionItem]
     var onDismiss: () -> Void = {}
@@ -43,9 +44,9 @@ struct ActionPanelView: View {
             HStack {
                 Spacer()
                 HStack(spacing: 12) {
-                    KeyHint(keys: ["↑", "↓"], label: "navigate")
-                    KeyHint(keys: ["↵"], label: "run")
-                    KeyHint(keys: ["esc"], label: "close")
+                    KeyHint(keys: ["↑", "↓"], label: L("hint.navigate"))
+                    KeyHint(keys: ["↵"], label: L("hint.run"))
+                    KeyHint(keys: ["esc"], label: L("hint.close"))
                 }
             }
             .padding(.horizontal, 16)

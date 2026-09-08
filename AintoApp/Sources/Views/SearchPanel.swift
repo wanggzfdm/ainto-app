@@ -3,7 +3,6 @@ import SwiftUI
 
 /// Non-activating floating panel for the search interface.
 /// Uses NSPanel + .nonactivatingPanel so the previously focused app keeps focus.
-/// This allows "paste to frontmost app" to work after selecting a clipboard item.
 @MainActor
 final class SearchPanel: NSPanel {
     private let hostingView: NSHostingView<MainView>
@@ -14,11 +13,15 @@ final class SearchPanel: NSPanel {
 
     /// Floating action panel window.
     private var actionWindow: NSWindow?
+    private var jsonFormatterWindow: NSWindow?
+    private var jsonFormatterWindowDelegate: JSONFormatterWindowDelegate?
     private var actionSelectedIndex = 0
 
     init() {
         let mainView = MainView(viewModel: viewModel)
         hostingView = NSHostingView(rootView: mainView)
+        hostingView.sizingOptions = []
+        hostingView.autoresizingMask = [.width, .height]
         // Default sizingOptions (.standardBounds) for correct auto-sizing.
         // Removing .titled eliminates the title bar constraints that caused
         // the infinite recursion between updateWindowContentSizeExtremaIfNecessary
@@ -27,7 +30,10 @@ final class SearchPanel: NSPanel {
         // glassmorphism background via VisualEffectBackground + RoundedRectangle.
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            contentRect: NSRect(
+                origin: .zero,
+                size: MainPanelLayout.size(for: .collapsedApplications)
+            ),
             styleMask: [.nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -53,16 +59,6 @@ final class SearchPanel: NSPanel {
         // Accept keyboard input even without activating the app
         self.becomesKeyOnlyIfNeeded = false
 
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        if let contentView = self.contentView {
-            NSLayoutConstraint.activate([
-                hostingView.topAnchor.constraint(equalTo: contentView.topAnchor),
-                hostingView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-                hostingView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-                hostingView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            ])
-        }
-
         // Wire up the paste action
         viewModel.onPasteAndHide = { [weak self] in
             self?.pasteToFrontmostApp()
@@ -73,42 +69,146 @@ final class SearchPanel: NSPanel {
             self?.grabSelectionFromPreviousApp(completion: completion)
         }
 
+        viewModel.onOpenJSONFormatterWindow = { [weak self] in
+            self?.openJSONFormatterWindow()
+        }
+
+        viewModel.onJSONFormatterExpansionChanged = { [weak self] expanded in
+            DispatchQueue.main.async {
+                self?.resizePanel(for: expanded ? .jsonFormatter : self?.mainPanelState ?? .searchOnly)
+            }
+        }
+
+        viewModel.onApplicationGridExpansionChanged = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.resizePanel(for: self.mainPanelState)
+            }
+        }
+
+        viewModel.onResultsChanged = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.resizePanel(for: self.mainPanelState)
+            }
+        }
+
+        viewModel.onApplicationIndexReady = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.pendingInitialShow else { return }
+                self.pendingInitialShow = false
+                self.presentPanel()
+            }
+        }
+
         viewModel.loadAISettings()
     }
 
     /// Whether the user has ever positioned the panel manually.
     private var hasUserPosition = false
-
+    private var pendingInitialShow = false
     func showPanel() {
-        // Remember the currently focused app before showing
+        // Remember the currently focused app before showing.
         previousApp = NSWorkspace.shared.frontmostApplication
-
-        // Pick up any Settings change to the AI master switch.
         viewModel.loadAISettings()
-
-        if !hasUserPosition {
-            let screen = NSScreen.screens.first(where: {
-                NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
-            }) ?? NSScreen.main ?? NSScreen.screens.first
-
-            if let screen {
-                let screenFrame = screen.visibleFrame
-                let x = screenFrame.midX - frame.width / 2
-                let y = screenFrame.maxY - (screenFrame.height * 0.25)
-                setFrameOrigin(NSPoint(x: x, y: y))
-            }
-            hasUserPosition = true
+        if !viewModel.isApplicationIndexReady, viewModel.query.isEmpty {
+            pendingInitialShow = true
+            viewModel.selectAll()
+            viewModel.refreshApps()
+            return
         }
+        presentPanel()
+    }
 
-        // Do NOT call NSApp.activate — keep the previous app focused
+    private func presentPanel() {
+        let screen = screenUnderMouse()
+        if let screen {
+            let frameSize = MainPanelLayout.size(for: mainPanelState, itemCount: mainPanelItemCount)
+            let visibleFrame = screen.visibleFrame
+            let width = min(frameSize.width, visibleFrame.width - 24)
+            let height = min(frameSize.height, visibleFrame.height - 24)
+            let x = visibleFrame.midX - width / 2
+            let y = visibleFrame.maxY - visibleFrame.height * 0.25 - height / 2
+            setFrame(NSRect(x: x, y: max(visibleFrame.minY + 12, y), width: width, height: height), display: true, animate: false)
+        }
+        viewModel.updateClipboardContext(NSPasteboard.general.string(forType: .string))
         makeKeyAndOrderFront(nil)
         viewModel.selectAll()
-        // Pick up apps installed/removed since the last time the panel opened.
-        viewModel.refreshApps()
+    }
+
+    private var mainPanelState: MainPanelContentState {
+        if viewModel.isJSONFormatterExpanded { return .jsonFormatter }
+        let itemCount = viewModel.displayedApplicationResults.count
+        if itemCount == 0 { return .searchOnly }
+        return viewModel.query.isEmpty
+            ? .collapsedApplications
+            : .searchResults
+    }
+
+    private var mainPanelItemCount: Int {
+        viewModel.displayedApplicationResults.count
+    }
+
+    private func screenUnderMouse() -> NSScreen? {
+        NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+    }
+
+    private func resizePanel(for state: MainPanelContentState, animate: Bool = true) {
+        let screen = screenUnderMouse()
+        let availableFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 800)
+        let desiredSize = MainPanelLayout.size(for: state, itemCount: mainPanelItemCount)
+        let width = min(desiredSize.width, availableFrame.width - 24)
+        let height = min(desiredSize.height, availableFrame.height - 24)
+        let top = min(frame.maxY, availableFrame.maxY - 12)
+        let x = min(max(frame.origin.x, availableFrame.minX + 12), availableFrame.maxX - width - 12)
+        let y = max(availableFrame.minY + 12, top - height)
+        setFrame(NSRect(x: x, y: y, width: width, height: height), display: true, animate: animate)
+    }
+
+    private func openJSONFormatterWindow() {
+        if let window = jsonFormatterWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            viewModel.didOpenJSONFormatterWindow()
+            return
+        }
+
+        let text = Binding(
+            get: { [weak viewModel] in viewModel?.jsonFormatterInput ?? "" },
+            set: { [weak viewModel] in viewModel?.jsonFormatterInput = $0 }
+        )
+        let rootView = JSONFormatterView(text: text)
+        let hosting = NSHostingView(rootView: rootView)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hosting
+        window.title = L("json.title")
+        window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 800, height: 600)
+        window.center()
+
+        let delegate = JSONFormatterWindowDelegate { [weak self] in
+            self?.jsonFormatterWindow = nil
+            self?.jsonFormatterWindowDelegate = nil
+            self?.viewModel.didCloseJSONFormatterWindow()
+        }
+        jsonFormatterWindowDelegate = delegate
+        window.delegate = delegate
+        jsonFormatterWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        viewModel.didOpenJSONFormatterWindow()
     }
 
     func hidePanel() {
         hideActionPanel()
+        viewModel.resetApplicationGridExpansion()
         orderOut(nil)
     }
 
@@ -154,11 +254,9 @@ final class SearchPanel: NSPanel {
             pasteboard.clearContents()
             self.simulateCopy()
 
-            // Wait for clipboard to update
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 let selection = pasteboard.string(forType: .string) ?? ""
 
-                // Restore previous clipboard content
                 pasteboard.clearContents()
                 if let prev = previousContent {
                     pasteboard.setString(prev, forType: .string)
@@ -190,8 +288,9 @@ final class SearchPanel: NSPanel {
         guard !actions.isEmpty else { return }
         actionSelectedIndex = 0
 
-        let title = viewModel.results.indices.contains(viewModel.selectedIndex)
-            ? viewModel.results[viewModel.selectedIndex].title : ""
+        let displayedResults = viewModel.displayedApplicationResults
+        let title = displayedResults.indices.contains(viewModel.selectedIndex)
+            ? displayedResults[viewModel.selectedIndex].title : ""
 
         let panelView = ActionPanelView(
             title: title,
@@ -235,8 +334,9 @@ final class SearchPanel: NSPanel {
     func updateActionPanelSelection() {
         guard let window = actionWindow else { return }
         let actions = viewModel.currentActions
-        let title = viewModel.results.indices.contains(viewModel.selectedIndex)
-            ? viewModel.results[viewModel.selectedIndex].title : ""
+        let displayedResults = viewModel.displayedApplicationResults
+        let title = displayedResults.indices.contains(viewModel.selectedIndex)
+            ? displayedResults[viewModel.selectedIndex].title : ""
 
         let panelView = ActionPanelView(
             title: title,
@@ -385,13 +485,6 @@ final class SearchPanel: NSPanel {
                     }
                     return nil
                 }
-                if self.viewModel.page == .clipboard {
-                    let items = self.viewModel.filteredClipboardItems
-                    if self.viewModel.clipboardSelectedIndex < items.count {
-                        self.viewModel.deleteClipboardItem(id: items[self.viewModel.clipboardSelectedIndex].id)
-                    }
-                    return nil
-                }
             }
 
             // Cmd+E — edit selected snippet/AI command
@@ -427,11 +520,31 @@ final class SearchPanel: NSPanel {
             case 53 where self.viewModel.isEditingAICommand: // Escape in AI command edit — cancel
                 self.viewModel.cancelEditingAICommand()
                 return nil
+            case 123: // Left arrow
+                if self.shouldUseHorizontalGridNavigation {
+                    self.moveGridSelection(.left)
+                    return nil
+                }
+                return event
+            case 124: // Right arrow
+                if self.shouldUseHorizontalGridNavigation {
+                    self.moveGridSelection(.right)
+                    return nil
+                }
+                return event
             case 125: // Down arrow
-                self.viewModel.moveSelection(by: 1)
+                if self.viewModel.page == .main, self.viewModel.searchMode == .apps {
+                    self.moveGridSelection(.down)
+                } else {
+                    self.viewModel.moveSelection(by: 1)
+                }
                 return nil
             case 126: // Up arrow
-                self.viewModel.moveSelection(by: -1)
+                if self.viewModel.page == .main, self.viewModel.searchMode == .apps {
+                    self.moveGridSelection(.up)
+                } else {
+                    self.viewModel.moveSelection(by: -1)
+                }
                 return nil
             case 36: // Enter/Return
                 if self.viewModel.searchMode == .claude && self.viewModel.page == .main {
@@ -443,13 +556,15 @@ final class SearchPanel: NSPanel {
                     return nil
                 }
                 self.viewModel.openSelected()
-                if self.viewModel.page == .main {
+                if self.viewModel.page == .main && !self.viewModel.isJSONFormatterExpanded {
                     self.hidePanel()
                 }
                 return nil
             case 53: // Escape
                 if self.viewModel.page != .main {
                     self.viewModel.goBack()
+                } else if self.viewModel.isJSONFormatterExpanded {
+                    self.viewModel.collapseJSONFormatter()
                 } else if self.viewModel.query.isEmpty {
                     self.hidePanel()
                 } else {
@@ -460,6 +575,24 @@ final class SearchPanel: NSPanel {
                 return event
             }
         }
+    }
+
+    private var shouldUseHorizontalGridNavigation: Bool {
+        viewModel.page == .main
+            && viewModel.searchMode == .apps
+            && viewModel.query.isEmpty
+            && !viewModel.results.isEmpty
+    }
+
+    private func moveGridSelection(_ direction: GridNavigationDirection) {
+        let displayedResults = viewModel.displayedApplicationResults
+        guard !displayedResults.isEmpty else { return }
+        viewModel.selectedIndex = GridSelectionNavigator.destination(
+            from: viewModel.selectedIndex,
+            itemCount: displayedResults.count,
+            columnCount: MainSearchGridMetrics.columnCount,
+            direction: direction
+        )
     }
 
     private func removeKeyMonitor() {
@@ -477,5 +610,18 @@ final class SearchPanel: NSPanel {
     override func orderOut(_ sender: Any?) {
         removeKeyMonitor()
         super.orderOut(sender)
+    }
+}
+
+@MainActor
+private final class JSONFormatterWindowDelegate: NSObject, NSWindowDelegate {
+    private let onClose: () -> Void
+
+    init(onClose: @escaping () -> Void) {
+        self.onClose = onClose
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose()
     }
 }

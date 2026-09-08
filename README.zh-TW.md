@@ -34,7 +34,7 @@
 |------|------|
 | **AI** | 按 Tab 開始對話，或選取文字後執行並取代（修正文法、翻譯、摘要，或自訂指令） |
 | **應用程式搜尋** | 模糊搜尋並即時啟動 macOS 應用程式 |
-| **剪貼簿歷史** | 持久化的歷史記錄，支援文字、圖片與檔案 |
+| **JSON 格式化** | 格式化、壓縮、驗證並安全查詢 JSON |
 | **文字片段** | 在任何 app 中展開文字，支援動態佔位符（`{date}`、`{clipboard}`、`{time}`、`{uuid}`） |
 
 > **AI 與計費：** Ainto 透過你 Mac 上的 Claude Code（`claude -p`）執行 AI，用量計入你自己的 Claude 帳號。Ainto 不儲存 API key，也不向你收費。計費方式請見 [Claude 對 Agent SDK 與 `claude -p` 用量的說明](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan)。
@@ -50,7 +50,7 @@ flowchart TD
 
     subgraph FE["前端 — AppKit + SwiftUI"]
         HK --> Panel["非啟動式 NSPanel"]
-        Panel --> Views["搜尋 / 剪貼簿 / 片段 / AI 畫面"]
+        Panel --> Views["搜尋 / JSON 格式化 / 片段 / AI 畫面"]
         Views --> Table["NSTableView（cell 重用）"]
         Tap --> Expand["行內文字片段展開"]
     end
@@ -62,25 +62,21 @@ flowchart TD
         Disc["應用程式探索"]
         Search["模糊搜尋"]
         Rank["frecency 排序"]
-        Clip["剪貼簿儲存"]
         Snip["文字片段"]
         AICmd["AI 指令"]
     end
 
     Disc -->|Launch Services| OS["macOS"]
-    Clip --> DB[("SQLite — clipboard.db")]
-    Clip --> Img[["磁碟上的圖片"]]
     Snip --> Cfg[("TOML 設定")]
     Rank --> Cfg
     AICmd --> CC["Claude Code (CLI)"]
 ```
 
-- **Rust 核心。** 應用程式探索、模糊搜尋、frecency 排序、剪貼簿儲存、文字片段展開與 AI 指令，全部位於一個連結進 app 的 Rust 靜態函式庫中。
+- **Rust 核心。** 應用程式探索、模糊搜尋、frecency 排序、文字片段展開與 AI 指令，全部位於一個連結進 app 的 Rust 靜態函式庫中。
 - **應用程式探索。** 透過 Launch Services 列舉應用程式，再以 frecency 模型（最近使用乘以使用頻率）排序，讓最常用的 app 優先出現。
-- **剪貼簿儲存。** 以 SQLite 為後端。圖片寫入磁碟並以路徑引用，而非存進資料庫；每一筆都以 XXH3 內容雜湊去除重複。文字與圖片各有獨立的保留上限，因此大量複製文字不會擠掉圖片歷史。
-- **剪貼簿清單。** 採用會重用 cell 的 `NSTableView`，由分頁且經過 debounce 的 SQLite 查詢餵入資料；無論歷史成長到多大，捲動與搜尋都保持流暢。
+- **JSON 格式化。** 原生 Swift 編輯器提供語法著色、行號、樹狀折疊、格式化、壓縮與安全的路徑查詢。
 - **輸入。** 一個非啟動式的 `NSPanel`，絕不從你正在使用的 app 搶走焦點。全域快速鍵是註冊的系統快速鍵，行內文字片段展開則由監看任意 app 鍵盤輸入的 `CGEvent` tap 驅動。
-- **本地優先。** 所有資料都存在 `~/.config/ainto/` 之下：剪貼簿歷史用 SQLite，設定、片段、AI 指令與排序則用 TOML。無遙測。
+- **本地優先。** 設定、片段、AI 指令與排序資料都保存在 `~/.config/ainto/` 下，不含遙測。
 - **更新。** 建置產物皆經簽署、公證，並透過 [Sparkle](https://sparkle-project.org/) 派送。
 
 ## 建置

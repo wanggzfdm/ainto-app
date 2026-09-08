@@ -34,7 +34,7 @@
 |---------|-------------|
 | **AI** | Press Tab to chat, or select text → run & replace (Fix Grammar, Translate, Summarize, or your own) |
 | **App Search** | Fuzzy search and launch macOS apps instantly |
-| **Clipboard History** | Persistent history with text, image, and file support |
+| **JSON Formatter** | Format, minify, validate, and safely query JSON |
 | **Snippets** | Text expansion in any app with dynamic placeholders (`{date}`, `{clipboard}`, `{time}`, `{uuid}`) |
 
 > **AI & billing:** Ainto runs the Claude Code CLI on your Mac (`claude -p`), so AI usage is billed to your own Claude account — Ainto stores no API key and never charges you. See [how Claude meters Agent SDK / `claude -p` usage](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan).
@@ -50,7 +50,7 @@ flowchart TD
 
     subgraph FE["Front end — AppKit + SwiftUI"]
         HK --> Panel["Non-activating NSPanel"]
-        Panel --> Views["Search / Clipboard / Snippets / AI views"]
+        Panel --> Views["Search / JSON Formatter / Snippets / AI views"]
         Views --> Table["NSTableView (cell reuse)"]
         Tap --> Expand["Inline snippet expansion"]
     end
@@ -62,25 +62,20 @@ flowchart TD
         Disc["App discovery"]
         Search["Fuzzy search"]
         Rank["Frecency ranking"]
-        Clip["Clipboard store"]
         Snip["Snippets"]
         AICmd["AI commands"]
     end
 
     Disc -->|Launch Services| OS["macOS"]
-    Clip --> DB[("SQLite — clipboard.db")]
-    Clip --> Img[["Images on disk"]]
     Snip --> Cfg[("TOML config")]
     Rank --> Cfg
     AICmd --> CC["Claude Code (CLI)"]
 ```
 
-- **Rust core.** App discovery, fuzzy search, frecency ranking, the clipboard store, snippet expansion, and AI commands all live in a single Rust static library linked into the app.
+- **Rust core.** App discovery, fuzzy search, frecency ranking, snippet expansion, and AI commands all live in a single Rust static library linked into the app.
 - **App discovery.** Apps are enumerated through Launch Services, then ordered by a frecency model (recency × frequency) so your most-used apps surface first.
-- **Clipboard store.** Backed by SQLite. Images are written to disk and referenced by path rather than stored in the database, and every entry is deduplicated with an XXH3 content hash. Text and images keep independent retention limits, so heavy text copying never evicts your image history.
-- **Clipboard list.** An `NSTableView` with cell reuse, fed by paginated and debounced SQLite queries — the list scrolls and searches smoothly however large the history grows.
 - **Input.** A non-activating `NSPanel` that never steals focus from the app you're in. The global hotkey is a registered system hotkey, while inline snippet expansion is driven by a `CGEvent` tap that watches your keystrokes in any app.
-- **Local-first.** Everything lives under `~/.config/ainto/` — SQLite for clipboard history, TOML for config, snippets, AI commands, and rankings. No telemetry.
+- **Local-first.** Everything lives under `~/.config/ainto/` — TOML for config, snippets, AI commands, and rankings. No telemetry.
 - **Updates.** Builds are signed, notarized, and delivered over [Sparkle](https://sparkle-project.org/).
 
 ## Build

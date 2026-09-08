@@ -11,8 +11,6 @@ use crate::Error;
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(default)]
 pub struct Config {
-    pub clipboard_max_items: usize,
-    pub clipboard_max_image_items: usize,
     pub claude_binary: String,
     pub snippets_enabled: bool,
     /// Master switch for all AI-related features in the UI.
@@ -23,8 +21,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            clipboard_max_items: 200,
-            clipboard_max_image_items: 50,
             claude_binary: "claude".to_string(),
             snippets_enabled: true,
             ai_enabled: true,

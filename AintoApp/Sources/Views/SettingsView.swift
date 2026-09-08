@@ -7,10 +7,8 @@ import Sparkle
 /// Settings — clean sidebar + card-based content.
 struct SettingsView: View {
     var hotkeyManager: HotkeyManager?
+    @ObservedObject private var localization = LocalizationManager.shared
 
-    @State private var clipboardMaxItems: Int = 200
-    @State private var clipboardMaxImageItems: Int = 50
-    @State private var clipboardImagePath: String = "~/.config/ainto/clipboard"
     @State private var claudeBinary: String = "claude"
     @State private var aiEnabled: Bool = true
     @State private var snippetsEnabled: Bool = true
@@ -23,16 +21,25 @@ struct SettingsView: View {
 
     enum SettingsSection: String, CaseIterable {
         case general = "General"
-        case clipboard = "Clipboard"
         case ai = "AI"
         case snippets = "Snippets"
         case data = "Data"
         case about = "About"
 
+        @MainActor
+        var title: String {
+            switch self {
+            case .general: return L("settings.general")
+            case .ai: return L("settings.ai")
+            case .snippets: return L("settings.snippets")
+            case .data: return L("settings.data")
+            case .about: return L("settings.about")
+            }
+        }
+
         var icon: String {
             switch self {
             case .general: return "gearshape"
-            case .clipboard: return "doc.on.clipboard"
             case .ai: return "sparkle"
             case .snippets: return "text.quote"
             case .data: return "folder"
@@ -47,7 +54,7 @@ struct SettingsView: View {
             VStack(spacing: 2) {
                 ForEach(SettingsSection.allCases, id: \.self) { section in
                     SidebarItem(
-                        title: section.rawValue,
+                        title: section.title,
                         icon: section.icon,
                         isSelected: selectedSection == section
                     )
@@ -65,7 +72,6 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     switch selectedSection {
                     case .general: generalSection
-                    case .clipboard: clipboardSection
                     case .ai: aiSection
                     case .snippets: snippetsSection
                     case .data: dataSection
@@ -82,19 +88,17 @@ struct SettingsView: View {
             if let hk = hotkeyManager?.currentHotkey { selectedHotkey = hk }
             raycastRunning = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.raycast.macos" }
         }
-        .onChange(of: clipboardMaxItems) { _, _ in saveConfig(); applyClipboardLimits() }
-        .onChange(of: clipboardMaxImageItems) { _, _ in saveConfig(); applyClipboardLimits() }
         .onChange(of: claudeBinary) { _, _ in saveConfig() }
         .onChange(of: aiEnabled) { _, _ in saveConfig() }
         .onChange(of: snippetsEnabled) { _, _ in saveConfig() }
-        .alert("Reset Rankings", isPresented: $showResetConfirm) {
-            Button("Cancel", role: .cancel) {}
-            Button("Reset", role: .destructive) {
+        .alert(L("settings.resetRankings"), isPresented: $showResetConfirm) {
+            Button(L("common.cancel"), role: .cancel) {}
+            Button(L("common.reset"), role: .destructive) {
                 let path = ("~/.config/ainto/ranking.toml" as NSString).expandingTildeInPath
                 try? FileManager.default.removeItem(atPath: path)
             }
         } message: {
-            Text("This will reset all app and command usage rankings. This cannot be undone.")
+            Text(L("settings.resetMessage"))
         }
     }
 
@@ -102,11 +106,29 @@ struct SettingsView: View {
 
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            SectionHeader(title: "General", icon: "gearshape")
+            SectionHeader(title: L("settings.general"), icon: "gearshape")
 
             SettingsCard {
                 VStack(spacing: 16) {
-                    SettingsRow(label: "Hotkey") {
+                    SettingsRow(label: L("settings.language")) {
+                        Picker("", selection: $localization.language) {
+                            ForEach(AppLanguage.allCases) { language in
+                                Text(language.displayName).tag(language)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(width: 150)
+                    }
+
+                    Text(L("settings.languageHint"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Divider().opacity(0.3)
+
+                    SettingsRow(label: L("settings.hotkey")) {
                         HotkeyPicker(selected: $selectedHotkey) { newValue in
                             hotkeyManager?.setHotkey(newValue)
                         }
@@ -115,14 +137,14 @@ struct SettingsView: View {
                     // Spotlight warning — only if Spotlight's Cmd+Space is enabled
                     if selectedHotkey == "⌘ Space" && isSpotlightHotkeyEnabled() {
                         SettingsHint(icon: "exclamationmark.triangle.fill", color: .orange,
-                                     text: "Uncheck \"Show Spotlight search\" in Keyboard → Keyboard Shortcuts → Spotlight.") {
+                                     text: L("settings.spotlightWarning")) {
                             HotkeyManager.openSpotlightSettings()
                         }
                     }
 
                     if isRaycastConflicting() {
                         SettingsHint(icon: "exclamationmark.triangle.fill", color: .orange,
-                                     text: "Raycast is using the same hotkey (\(getRaycastHotkey() ?? "")). Quit Raycast or choose a different hotkey.") {
+                                     text: LocalizationManager.shared.format("settings.raycastWarning", getRaycastHotkey() ?? "")) {
                             if let raycast = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.raycast.macos" }) {
                                 raycast.terminate()
                                 raycastRunning = false
@@ -132,7 +154,7 @@ struct SettingsView: View {
 
                     Divider().opacity(0.3)
 
-                    SettingsRow(label: "Launch at login") {
+                    SettingsRow(label: L("settings.launchAtLogin")) {
                         Toggle("", isOn: $launchAtLogin)
                             .labelsHidden()
                             .toggleStyle(.switch)
@@ -153,73 +175,19 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Clipboard
-
-    private var clipboardSection: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            SectionHeader(title: "Clipboard", icon: "doc.on.clipboard")
-
-            SettingsCard {
-                VStack(spacing: 16) {
-                    SettingsRow(label: "Max text items") {
-                        HStack(spacing: 6) {
-                            Text("\(clipboardMaxItems)")
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 40, alignment: .trailing)
-                            Stepper("", value: $clipboardMaxItems, in: 10...1000, step: 10)
-                                .labelsHidden()
-                        }
-                    }
-
-                    Divider().opacity(0.3)
-
-                    SettingsRow(label: "Max image items") {
-                        HStack(spacing: 6) {
-                            Text("\(clipboardMaxImageItems)")
-                                .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 40, alignment: .trailing)
-                            Stepper("", value: $clipboardMaxImageItems, in: 5...200, step: 5)
-                                .labelsHidden()
-                        }
-                    }
-
-                    Divider().opacity(0.3)
-
-                    SettingsRow(label: "Image storage") {
-                        TextField("", text: $clipboardImagePath)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12, design: .monospaced))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Color.primary.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .frame(maxWidth: 220)
-                    }
-                }
-            }
-
-            Text("Images are stored as compressed PNG files. Older items are automatically removed when limits are reached.")
-                .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 4)
-        }
-    }
-
     // MARK: - AI
 
     private var aiSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            SectionHeader(title: "AI", icon: "sparkle")
+            SectionHeader(title: L("settings.ai"), icon: "sparkle")
 
             SettingsCard {
-                SettingsRow(label: "Enabled") {
+                SettingsRow(label: L("settings.enabled")) {
                     Toggle("", isOn: $aiEnabled).labelsHidden().toggleStyle(.switch)
                 }
             }
 
-            Text("Hides every AI feature in the launcher when off, including AI Commands and Claude mode.")
+            Text(L("settings.aiDisabledHint"))
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
@@ -234,7 +202,7 @@ struct SettingsView: View {
                 .padding(.top, 8)
 
                 SettingsCard {
-                    SettingsRow(label: "Binary path") {
+                    SettingsRow(label: L("settings.binaryPath")) {
                         TextField("claude", text: $claudeBinary)
                             .textFieldStyle(.plain)
                             .font(.system(size: 12, design: .monospaced))
@@ -246,7 +214,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Press Tab in the launcher to switch to Claude mode.")
+                Text(L("settings.claudeHint"))
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
@@ -256,7 +224,7 @@ struct SettingsView: View {
                     Image(systemName: "sparkle")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
-                    Text("AI Commands")
+                    Text(L("settings.aiCommands"))
                         .font(.system(size: 15, weight: .medium))
                 }
                 .padding(.top, 8)
@@ -266,12 +234,12 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("ai-commands.toml")
                                 .font(.system(size: 13))
-                            Text("Add, remove, or modify AI commands")
+                            Text(L("settings.aiCommandsHint"))
                                 .font(.system(size: 12))
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Button("Edit") {
+                        Button(L("common.edit")) {
                             let _ = rc_ai_commands_load()
                             let path = ("~/.config/ainto/ai-commands.toml" as NSString).expandingTildeInPath
                             NSWorkspace.shared.open(URL(fileURLWithPath: path))
@@ -282,7 +250,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Use {selection} as placeholder for selected text in prompts.")
+                Text(L("settings.selectionHint"))
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
@@ -294,11 +262,11 @@ struct SettingsView: View {
 
     private var snippetsSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            SectionHeader(title: "Snippets", icon: "text.quote")
+            SectionHeader(title: L("settings.snippets"), icon: "text.quote")
 
             SettingsCard {
                 VStack(spacing: 16) {
-                    SettingsRow(label: "Text expansion") {
+                    SettingsRow(label: L("settings.textExpansion")) {
                         Toggle("", isOn: $snippetsEnabled).labelsHidden().toggleStyle(.switch)
                     }
 
@@ -308,12 +276,12 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("snippets.toml")
                                 .font(.system(size: 13))
-                            Text("Manage snippet keywords and expansions")
+                            Text(L("settings.snippetsHint"))
                                 .font(.system(size: 12))
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Button("Edit") {
+                        Button(L("common.edit")) {
                             let path = ("~/.config/ainto/snippets.toml" as NSString).expandingTildeInPath
                             NSWorkspace.shared.open(URL(fileURLWithPath: path))
                         }
@@ -324,7 +292,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("Snippets expand automatically when you type their keyword in any app. Requires Accessibility permission.")
+            Text(L("settings.snippetsPermission"))
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 4)
@@ -335,20 +303,20 @@ struct SettingsView: View {
 
     private var dataSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            SectionHeader(title: "Data", icon: "folder")
+            SectionHeader(title: L("settings.data"), icon: "folder")
 
             SettingsCard {
                 VStack(spacing: 16) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Config directory")
+                            Text(L("settings.configDirectory"))
                                 .font(.system(size: 13))
                             Text("~/.config/ainto/")
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Button("Open") {
+                        Button(L("common.open")) {
                             let path = ("~/.config/ainto" as NSString).expandingTildeInPath
                             NSWorkspace.shared.open(URL(fileURLWithPath: path))
                         }
@@ -361,14 +329,14 @@ struct SettingsView: View {
 
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Usage rankings")
+                            Text(L("settings.usageRankings"))
                                 .font(.system(size: 13))
-                            Text("Frecency data for apps and commands")
+                            Text(L("settings.rankingsHint"))
                                 .font(.system(size: 12))
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
-                        Button("Reset") {
+                        Button(L("common.reset")) {
                             showResetConfirm = true
                         }
                         .buttonStyle(.plain)
@@ -391,11 +359,11 @@ struct SettingsView: View {
             Text("Ainto")
                 .font(.system(size: 22, weight: .bold))
 
-            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? appVersion)")
+            Text(LocalizationManager.shared.format("settings.version", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? appVersion))
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
 
-            Text("A personal macOS launcher\nbuilt with Swift + Rust")
+            Text(L("settings.tagline"))
                 .font(.system(size: 13))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -403,10 +371,10 @@ struct SettingsView: View {
             Spacer().frame(height: 12)
 
             HStack(spacing: 12) {
-                AboutButton(title: "Star on GitHub", icon: "star") {
+                AboutButton(title: L("settings.star"), icon: "star") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/ainto-labs/ainto-app")!)
                 }
-                AboutButton(title: "Report Issue", icon: "exclamationmark.bubble") {
+                AboutButton(title: L("settings.reportIssue"), icon: "exclamationmark.bubble") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/ainto-labs/ainto-app/issues")!)
                 }
             }
@@ -415,7 +383,7 @@ struct SettingsView: View {
                 AboutButton(title: "ainto.app", icon: "globe") {
                     NSWorkspace.shared.open(URL(string: "https://ainto.app")!)
                 }
-                AboutButton(title: "Check for Updates", icon: "arrow.triangle.2.circlepath") {
+                AboutButton(title: L("settings.checkUpdates"), icon: "arrow.triangle.2.circlepath") {
                     (NSApp.delegate as? AppDelegate)?.updater?.checkForUpdates()
                 }
             }
@@ -491,8 +459,6 @@ struct SettingsView: View {
         guard let data = jsonStr.data(using: .utf8),
               let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 
-        clipboardMaxItems = config["clipboard_max_items"] as? Int ?? 200
-        clipboardMaxImageItems = config["clipboard_max_image_items"] as? Int ?? 50
         claudeBinary = config["claude_binary"] as? String ?? "claude"
         aiEnabled = config["ai_enabled"] as? Bool ?? true
         snippetsEnabled = config["snippets_enabled"] as? Bool ?? true
@@ -502,8 +468,6 @@ struct SettingsView: View {
     private func saveConfig() {
         guard hasLoaded else { return }
         let config: [String: Any] = [
-            "clipboard_max_items": clipboardMaxItems,
-            "clipboard_max_image_items": clipboardMaxImageItems,
             "claude_binary": claudeBinary,
             "ai_enabled": aiEnabled,
             "snippets_enabled": snippetsEnabled,
@@ -513,12 +477,6 @@ struct SettingsView: View {
         let _ = rc_config_save(jsonStr)
     }
 
-    /// Apply clipboard limits to the running store so the change takes effect
-    /// immediately, not just on next launch. Only invoked when the clipboard
-    /// limits change — not on every config save.
-    private func applyClipboardLimits() {
-        let _ = rc_clipboard_set_limits(UInt64(clipboardMaxItems), UInt64(clipboardMaxImageItems))
-    }
 }
 
 // MARK: - Components
@@ -545,8 +503,12 @@ struct SettingsCard<Content: View>: View {
     var body: some View {
         content()
             .padding(16)
-            .background(Color.primary.opacity(0.04))
+            .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
     }
 }
 
@@ -568,7 +530,7 @@ struct SettingsHint: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()
-            Button("Fix") { action() }
+            Button(L("common.fix")) { action() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(.accentColor)

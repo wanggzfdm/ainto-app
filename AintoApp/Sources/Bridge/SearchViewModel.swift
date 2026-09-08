@@ -115,10 +115,10 @@ enum ClaudeRole {
 /// Active page in the launcher.
 enum LauncherPage: Equatable {
     case main
-    case clipboard
     case snippets
     case aiCommands
     case claude
+    case plugin
 }
 
 enum SearchMode: Equatable {
@@ -159,115 +159,6 @@ struct SearchResult: Identifiable {
     }
 }
 
-/// Clipboard entry decoded from Rust JSON.
-struct ClipboardItem: Identifiable {
-    let id: Int64
-    let contentType: String // "text" | "image" | "file"
-    let text: String?
-    let filePath: String?
-    let imageFilename: String?
-    let hash: UInt64
-    let sourceApp: String?
-    let lastCopiedAt: Int64
-    let copyCount: UInt32
-
-    var displayTitle: String {
-        switch contentType {
-        case "image": return "Image"
-        case "file":
-            if let path = filePath {
-                return (path as NSString).lastPathComponent
-            }
-            return "File"
-        default:
-            return text.map { Self.firstContentLine(of: $0) } ?? ""
-        }
-    }
-
-    /// First line of actual content for the list: skips leading blank lines and
-    /// indentation so the row shows real data instead of empty space. Scans only
-    /// the leading whitespace plus that first line (capped) — never splits the
-    /// whole string, which matters for very large clipboard entries.
-    private static func firstContentLine(of text: String, maxChars: Int = 500) -> String {
-        var start = text.startIndex
-        while start < text.endIndex, text[start].isWhitespace {
-            start = text.index(after: start)
-        }
-        guard start < text.endIndex else { return "" }
-        var end = start
-        var count = 0
-        while end < text.endIndex, !text[end].isNewline, count < maxChars {
-            end = text.index(after: end)
-            count += 1
-        }
-        return String(text[start..<end])
-    }
-
-    var iconName: String {
-        switch contentType {
-        case "image": return "photo"
-        case "file": return "doc.fill"
-        default: return "doc.text"
-        }
-    }
-
-    var contentTypeLabel: String {
-        switch contentType {
-        case "image": return "Image"
-        case "file": return "File"
-        default: return "Text"
-        }
-    }
-
-    var date: Date {
-        Date(timeIntervalSince1970: TimeInterval(lastCopiedAt))
-    }
-
-    var relativeTime: String {
-        let interval = Date().timeIntervalSince(date)
-        if interval < 60 { return "Just now" }
-        if interval < 3600 { return "\(Int(interval / 60))m ago" }
-        if interval < 86400 { return "\(Int(interval / 3600))h ago" }
-        return "\(Int(interval / 86400))d ago"
-    }
-
-    /// Time group for section headers.
-    var timeGroup: String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return "Today" }
-        if cal.isDateInYesterday(date) { return "Yesterday" }
-        return "Earlier"
-    }
-
-    /// Full image path on disk.
-    var imagePath: String? {
-        guard let filename = imageFilename else { return nil }
-        guard !filename.contains("/"), !filename.contains("..") else { return nil }
-        guard let cStr = rc_clipboard_image_dir() else { return nil }
-        let dir = String(cString: cStr)
-        rc_free_string(cStr)
-        return (dir as NSString).appendingPathComponent(filename)
-    }
-
-    /// Load NSImage for display (file icon or image thumbnail).
-    var displayImage: NSImage? {
-        switch contentType {
-        case "file":
-            if let path = filePath {
-                return NSWorkspace.shared.icon(forFile: path)
-            }
-            return nil
-        case "image":
-            if let path = imagePath {
-                return NSImage(contentsOfFile: path)
-            }
-            return nil
-        default:
-            return nil
-        }
-    }
-}
-
 /// Snippet item model.
 struct SnippetItem: Identifiable {
     var id: String
@@ -285,11 +176,21 @@ struct SnippetItem: Identifiable {
 final class SearchViewModel: ObservableObject {
     @Published var query: String = ""
     @Published var results: [SearchResult] = []
+    @Published var allApplications: [SearchResult] = []
+    @Published var isApplicationIndexReady = false
+    @Published var isApplicationGridExpanded = false
     @Published var selectedIndex: Int = 0
     @Published var shouldSelectAll = false
     @Published var page: LauncherPage = .main
     @Published var searchMode: SearchMode = .apps
-
+    @Published var jsonFormatterInput: String = ""
+    @Published var isJSONFormatterExpanded = false
+    @Published var shouldOpenJSONFormatterWindow = false
+    private var clipboardJSON: String?
+    private let pluginRegistry = PluginRegistry()
+    private let pluginSearchProvider = PluginSearchProvider()
+    @Published var activePlugin: PluginRegistration?
+    @Published var activePluginFeatureCode: String?
     // Claude state
     @Published var claudeMessages: [ClaudeMessage] = []
     @Published var claudeIsStreaming = false
@@ -317,33 +218,6 @@ final class SearchViewModel: ObservableObject {
     @Published var isEditingAICommand = false
     @Published var editingAICommand: AICommand?
 
-    // Clipboard state
-    @Published var clipboardItems: [ClipboardItem] = []
-    /// Not @Published — selection changes are handled directly by NSTableView
-    /// to avoid triggering SwiftUI re-renders on every arrow key press.
-    var clipboardSelectedIndex: Int = 0
-    private let clipboardPageSize = 50
-    private(set) var clipboardHasMore = true
-    var clipboardFilter: String = "" {
-        didSet {
-            if clipboardFilter.isEmpty {
-                clipboardFilterTask?.cancel()
-                if !debouncedClipboardFilter.isEmpty {
-                    debouncedClipboardFilter = ""
-                    // Reload unfiltered from SQLite
-                    loadClipboardItems()
-                }
-            } else {
-                scheduleClipboardFilter()
-            }
-        }
-    }
-    @Published var clipboardTypeFilter: ClipboardTypeFilter = .all {
-        didSet { rebuildFilteredClipboardItems() }
-    }
-    @Published var debouncedClipboardFilter: String = ""
-    private var clipboardFilterTask: DispatchWorkItem?
-
     // Action panel
     @Published var showActionPanel = false
 
@@ -354,19 +228,100 @@ final class SearchViewModel: ObservableObject {
     /// Callback to hide panel and paste to frontmost app (set by SearchPanel)
     var onPasteAndHide: (() -> Void)?
 
-    /// Callback to move clipboard table selection (set by ClipboardTableView).
-    /// Bypasses @Published to avoid SwiftUI re-render on every arrow key.
-    var onClipboardSelectionMove: ((_ newIndex: Int) -> Void)?
-
     /// Callback to reload text expander snippets (set by AppDelegate)
     var onSnippetsChanged: (() -> Void)?
+    var onOpenJSONFormatterWindow: (() -> Void)?
+    var onPluginFeatureSelected: ((String, String) -> Void)?
+    var onJSONFormatterExpansionChanged: ((Bool) -> Void)?
+    var onApplicationGridExpansionChanged: (() -> Void)?
+    var onResultsChanged: (() -> Void)?
+    var onApplicationIndexReady: (() -> Void)?
 
     var statusText: String {
         switch results.count {
-        case 0: return "No results"
-        case 1: return "1 result"
-        default: return "\(results.count) results"
+        case 0: return L("search.noResults")
+        case 1: return L("search.oneResult")
+        default: return LocalizationManager.shared.format("search.results", results.count)
         }
+    }
+
+    func refreshLocalizedContent() {
+        if page == .main {
+            if query.isEmpty {
+                results = buildDefaultResults()
+            } else {
+                performSearch(query: query)
+            }
+            selectedIndex = min(selectedIndex, max(results.count - 1, 0))
+        }
+    }
+
+    func updateClipboardContext(_ text: String?) {
+        let original = text ?? ""
+        clipboardJSON = JSONFormatterCore.isValidJSON(original) ? original : nil
+        if page == .main && query.isEmpty {
+            results = buildDefaultResults()
+            selectedIndex = 0
+        }
+    }
+
+    func openJSONFormatter(with text: String? = nil) {
+        jsonFormatterInput = text ?? clipboardJSON ?? ""
+        page = .main
+        searchMode = .apps
+        isJSONFormatterExpanded = true
+        onJSONFormatterExpansionChanged?(true)
+    }
+
+    func collapseJSONFormatter() {
+        isJSONFormatterExpanded = false
+        onJSONFormatterExpansionChanged?(false)
+    }
+
+    func requestJSONFormatterWindow() {
+        isJSONFormatterExpanded = false
+        onJSONFormatterExpansionChanged?(false)
+        shouldOpenJSONFormatterWindow = true
+        onOpenJSONFormatterWindow?()
+    }
+
+    func didOpenJSONFormatterWindow() {
+        shouldOpenJSONFormatterWindow = false
+    }
+
+    func didCloseJSONFormatterWindow() {
+        shouldOpenJSONFormatterWindow = false
+    }
+
+    var displayedApplicationResults: [SearchResult] {
+        guard query.isEmpty else { return results }
+        guard isApplicationIndexReady else { return [] }
+        if isApplicationGridExpanded {
+            return allApplications
+        }
+
+        let recentApplications = results.filter { $0.subtitle == L("search.application") }
+        return ApplicationGridPresentation.collapsedItems(
+            recent: recentApplications,
+            all: allApplications,
+            maximumCount: MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount,
+            id: { $0.subtitle + "\u{0}" + $0.title }
+        )
+    }
+
+    var expandableApplicationCount: Int {
+        allApplications.count
+    }
+
+    func setApplicationGridExpanded(_ expanded: Bool) {
+        isApplicationGridExpanded = expanded
+        selectedIndex = 0
+        onApplicationGridExpansionChanged?()
+    }
+
+    func resetApplicationGridExpansion() {
+        isApplicationGridExpanded = false
+        selectedIndex = 0
     }
 
     func clearQuery() {
@@ -377,10 +332,6 @@ final class SearchViewModel: ObservableObject {
 
     func selectAll() {
         shouldSelectAll = true
-        // Refresh default results if query is empty
-        if query.isEmpty {
-            results = buildDefaultResults()
-        }
     }
 
     /// Re-scan installed applications in the background, then refresh the
@@ -393,12 +344,28 @@ final class SearchViewModel: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.page == .main else { return }
                 if self.query.isEmpty {
-                    self.results = self.buildDefaultResults()
+                    self.applyApplicationRefresh(
+                        allApplications: self.loadAllApplications(),
+                        recentApplications: self.buildDefaultResults()
+                    )
                 } else {
                     self.performSearch(query: self.query)
                 }
             }
         }
+    }
+
+    func applyApplicationRefresh(
+        allApplications: [SearchResult],
+        recentApplications: [SearchResult]
+    ) {
+        self.allApplications = allApplications
+        results = recentApplications
+        selectedIndex = 0
+        isApplicationIndexReady = true
+        onApplicationIndexReady?()
+        onApplicationGridExpansionChanged?()
+        onResultsChanged?()
     }
 
     // MARK: - Navigation
@@ -423,15 +390,6 @@ final class SearchViewModel: ObservableObject {
         focusFilterField()
     }
 
-    func goToClipboard() {
-        page = .clipboard
-        clipboardFilter = ""
-        debouncedClipboardFilter = ""
-        clipboardSelectedIndex = 0
-        loadClipboardItems()
-        focusFilterField()
-    }
-
     func goBack() {
         if page == .claude {
             claudeCancel()
@@ -442,8 +400,9 @@ final class SearchViewModel: ObservableObject {
             cancelEditingAICommand()
             return
         }
-        clipboardFilter = "" // didSet handles cancel + debouncedClipboardFilter
         page = .main
+        activePlugin = nil
+        activePluginFeatureCode = nil
         searchMode = .apps
         // TextField is always in the view hierarchy (ZStack), so focus immediately.
         // selectAll is chained after focus succeeds to avoid race conditions.
@@ -452,10 +411,16 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Main search
 
+    private func loadPluginsIfNeeded() {
+        guard pluginRegistry.plugins.isEmpty else { return }
+        try? pluginRegistry.load()
+    }
+
     func performSearch(query: String) {
         guard !query.isEmpty else {
             results = buildDefaultResults()
             selectedIndex = 0
+            onResultsChanged?()
             return
         }
 
@@ -464,7 +429,7 @@ final class SearchViewModel: ObservableObject {
             let prompt = String(query.dropFirst(4))
             results = [
                 SearchResult(
-                    title: "Ask Claude: \(prompt)",
+                    title: LocalizationManager.shared.format("search.askClaude", prompt),
                     subtitle: "Claude Code",
                     icon: nil,
                     systemIcon: "bubble.left.fill"
@@ -492,7 +457,7 @@ final class SearchViewModel: ObservableObject {
                     let icon = self.loadAppIcon(path: path)
                     var result = SearchResult(
                         title: name,
-                        subtitle: "Application",
+                        subtitle: L("search.application"),
                         icon: icon,
                         systemIcon: "app.fill",
                         score: fuzzyScore(query, name) + ranking
@@ -527,7 +492,7 @@ final class SearchViewModel: ObservableObject {
                         let expansion = snippet["expansion"] as? String ?? ""
                         return SearchResult(
                             title: name,
-                            subtitle: "Snippet: \(keyword)",
+                            subtitle: LocalizationManager.shared.format("search.snippet", keyword),
                             icon: nil,
                             systemIcon: "doc.text.fill"
                         ) { [weak self] in
@@ -555,7 +520,7 @@ final class SearchViewModel: ObservableObject {
                 let cmdScore = fuzzyScore(q, command.name) + self.commandRanking(for: command.name)
                 var result = SearchResult(
                     title: command.name,
-                    subtitle: "AI Command",
+                    subtitle: L("search.aiCommand"),
                     icon: nil,
                     systemIcon: command.icon,
                     score: cmdScore
@@ -569,8 +534,8 @@ final class SearchViewModel: ObservableObject {
 
             if fuzzyMatch(q, "ai commands") || fuzzyMatch(q, "manage ai commands") {
                 commandResults.append(SearchResult(
-                    title: "AI Commands",
-                    subtitle: "Manage AI Commands",
+                    title: L("settings.aiCommands"),
+                    subtitle: L("search.manageAICommands"),
                     icon: nil,
                     systemIcon: "sparkle",
                     score: fuzzyScore(q, "AI Commands")
@@ -582,8 +547,8 @@ final class SearchViewModel: ObservableObject {
 
         if fuzzyMatch(q, "snippets") {
             let r = SearchResult(
-                title: "Snippets",
-                subtitle: "Command",
+                title: L("settings.snippets"),
+                subtitle: L("search.command"),
                 icon: nil,
                 systemIcon: "text.quote",
                 score: fuzzyScore(query, "Snippets") + commandRanking(for: "Snippets")
@@ -594,33 +559,40 @@ final class SearchViewModel: ObservableObject {
             commandResults.append(r)
         }
 
-        if fuzzyMatch(q, "clipboard history") {
-            let r = SearchResult(
-                title: "Clipboard History",
-                subtitle: "Command",
-                icon: nil,
-                systemIcon: "doc.on.clipboard",
-                score: fuzzyScore(query, "Clipboard History") + commandRanking(for: "Clipboard History")
-            ) { [weak self] in
-                self?.incrementCommandRanking("Clipboard History")
-                self?.goToClipboard()
-            }
-            commandResults.append(r)
+        if fuzzyMatch(q, "json formatter") || fuzzyMatch(q, "json 格式化") || fuzzyMatch(q, "json-editor") || fuzzyMatch(q, "json editor") {
+            commandResults.append(SearchResult(title: L("json.title"), subtitle: L("search.jsonSubtitle"), icon: nil, systemIcon: "curlybraces", score: fuzzyScore(query, "JSON Formatter")) { [weak self] in
+                self?.openJSONFormatter()
+            })
         }
 
-        var allResults = appResults + commandResults + snippetResults
+        loadPluginsIfNeeded()
+        let pluginResults = pluginSearchProvider.candidates(from: pluginRegistry.plugins)
+            .filter { pluginSearchProvider.matches(query: query, candidate: $0) }
+            .map { candidate in
+                SearchResult(
+                    title: candidate.title,
+                    subtitle: candidate.subtitle,
+                    icon: nil,
+                    systemIcon: "puzzlepiece.extension",
+                    score: fuzzyScore(query, candidate.title)
+                ) { [weak self] in
+                    guard let self, let registration = self.pluginRegistry.plugin(id: candidate.pluginID) else { return }
+                    self.activePlugin = registration
+                    self.activePluginFeatureCode = candidate.featureCode
+                    self.page = .plugin
+                    self.onPluginFeatureSelected?(candidate.pluginID, candidate.featureCode)
+                }
+            }
+
+        var allResults = appResults + commandResults + snippetResults + pluginResults
         allResults.sort { $0.score > $1.score }
         results = Array(allResults.prefix(20))
         selectedIndex = 0
+        onResultsChanged?()
     }
 
     func moveSelection(by offset: Int) {
         switch page {
-        case .clipboard:
-            let count = filteredClipboardItems.count
-            guard count > 0 else { return }
-            clipboardSelectedIndex = max(0, min(clipboardSelectedIndex + offset, count - 1))
-            onClipboardSelectionMove?(clipboardSelectedIndex)
         case .snippets:
             let count = filteredSnippets.count
             guard count > 0 else { return }
@@ -632,158 +604,24 @@ final class SearchViewModel: ObservableObject {
         case .main:
             guard !results.isEmpty else { return }
             selectedIndex = max(0, min(selectedIndex + offset, results.count - 1))
-        case .claude:
-            break // no list navigation in Claude view
+        case .claude, .plugin:
+            break // no list navigation on non-list pages
         }
     }
 
     func openSelected() {
         switch page {
-        case .clipboard:
-            pasteSelectedClipboardItem()
         case .snippets:
             expandSelectedSnippet()
         case .aiCommands:
             executeSelectedAICommand()
         case .main:
-            guard selectedIndex < results.count else { return }
-            results[selectedIndex].action()
-        case .claude:
+            let displayedResults = displayedApplicationResults
+            guard displayedResults.indices.contains(selectedIndex) else { return }
+            displayedResults[selectedIndex].action()
+        case .claude, .plugin:
             break
         }
-    }
-
-    // MARK: - Clipboard
-
-    /// Reload clipboard items only if the clipboard page is currently visible.
-    func reloadClipboardIfVisible() {
-        guard page == .clipboard else { return }
-        loadClipboardItems()
-    }
-
-    private func scheduleClipboardFilter() {
-        clipboardFilterTask?.cancel()
-        let task = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.debouncedClipboardFilter = self.clipboardFilter
-            // Search via SQLite instead of in-memory filter
-            self.clipboardItems = self.fetchClipboardItems(query: self.debouncedClipboardFilter, offset: 0)
-            self.clipboardHasMore = self.clipboardItems.count >= self.clipboardPageSize
-            self.clipboardSelectedIndex = 0
-            self.rebuildFilteredClipboardItems()
-        }
-        clipboardFilterTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: task)
-    }
-
-    func loadClipboardItems() {
-        clipboardItems = fetchClipboardItems(query: nil, offset: 0)
-        clipboardHasMore = clipboardItems.count >= clipboardPageSize
-        clipboardSelectedIndex = 0
-        rebuildFilteredClipboardItems()
-    }
-
-    /// Load next page and append to existing items.
-    func loadMoreClipboardItems() {
-        guard clipboardHasMore else { return }
-        let query = debouncedClipboardFilter.isEmpty ? nil : debouncedClipboardFilter
-        let newItems = fetchClipboardItems(query: query, offset: clipboardItems.count)
-        clipboardHasMore = newItems.count >= clipboardPageSize
-        clipboardItems.append(contentsOf: newItems)
-        rebuildFilteredClipboardItems()
-    }
-
-    /// Fetch clipboard items from Rust/SQLite with optional search query.
-    private func fetchClipboardItems(query: String?, offset: Int) -> [ClipboardItem] {
-        let cStr: UnsafePointer<CChar>?
-        if let query, !query.isEmpty {
-            cStr = rc_clipboard_search_paged(query, UInt64(clipboardPageSize), UInt64(offset))
-        } else {
-            cStr = rc_clipboard_get_recent_paged(UInt64(clipboardPageSize), UInt64(offset))
-        }
-        guard let cStr else { return [] }
-        let jsonStr = String(cString: cStr)
-        rc_free_string(cStr)
-
-        guard let data = jsonStr.data(using: .utf8),
-              let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-
-        return entries.map { entry in
-            ClipboardItem(
-                id: entry["id"] as? Int64 ?? 0,
-                contentType: entry["content_type"] as? String ?? "text",
-                text: entry["text"] as? String,
-                filePath: entry["file_path"] as? String,
-                imageFilename: entry["image_filename"] as? String,
-                hash: (entry["hash"] as? NSNumber)?.uint64Value ?? 0,
-                sourceApp: entry["source_app"] as? String,
-                lastCopiedAt: entry["last_copied_at"] as? Int64 ?? 0,
-                copyCount: (entry["copy_count"] as? NSNumber)?.uint32Value ?? 0
-            )
-        }
-    }
-
-    /// Cached filtered result + derived data — recalculated only when filter
-    /// inputs change, not on every SwiftUI body evaluation.
-    @Published private(set) var filteredClipboardItems: [ClipboardItem] = []
-    private(set) var clipboardGroupedItems: [String: [ClipboardItem]] = [:]
-    private(set) var clipboardGroupedKeys: [String] = []
-    private(set) var clipboardIndexMap: [Int64: Int] = [:]
-
-    private func rebuildFilteredClipboardItems() {
-        var items = clipboardItems
-
-        // Apply type filter (in-memory, since SQLite doesn't know our type categories)
-        switch clipboardTypeFilter {
-        case .all: break
-        case .text: items = items.filter { $0.contentType == "text" }
-        case .images: items = items.filter { $0.contentType == "image" }
-        case .files: items = items.filter { $0.contentType == "file" }
-        }
-
-        filteredClipboardItems = items
-
-        // Rebuild derived data (used by ClipboardView)
-        let grouped = Dictionary(grouping: items) { $0.timeGroup }
-        clipboardGroupedItems = grouped
-        let order = ["Today": 0, "Yesterday": 1, "Earlier": 2]
-        clipboardGroupedKeys = grouped.keys.sorted { (order[$0] ?? 3) < (order[$1] ?? 3) }
-        clipboardIndexMap = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($1.id, $0) })
-    }
-
-    func pasteSelectedClipboardItem() {
-        let items = filteredClipboardItems
-        guard clipboardSelectedIndex < items.count else { return }
-        let item = items[clipboardSelectedIndex]
-
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-
-        switch item.contentType {
-        case "text":
-            if let text = item.text {
-                pasteboard.setString(text, forType: .string)
-            }
-        case "file":
-            if let path = item.filePath {
-                let url = URL(fileURLWithPath: path) as NSURL
-                pasteboard.writeObjects([url])
-            }
-        case "image":
-            if let path = item.imagePath, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-                pasteboard.setData(data, forType: .png)
-            }
-        default:
-            break
-        }
-
-        // Hide panel and paste into the previously focused app
-        onPasteAndHide?()
-    }
-
-    func deleteClipboardItem(id: Int64) {
-        let _ = rc_clipboard_delete(id)
-        loadClipboardItems()
     }
 
     // MARK: - Snippets
@@ -979,14 +817,14 @@ final class SearchViewModel: ObservableObject {
 
     private func aiCommandActions(for command: AICommand) -> [ActionItem] {
         [
-            ActionItem(title: "Edit", icon: "pencil", shortcut: nil, keepPanel: true) { [weak self] in
+            ActionItem(title: L("common.edit"), icon: "pencil", shortcut: nil, keepPanel: true) { [weak self] in
                 self?.goToAICommands()
                 if let idx = self?.aiCommands.firstIndex(where: { $0.id == command.id }) {
                     self?.aiCommandSelectedIndex = idx
                     self?.editSelectedAICommand()
                 }
             },
-            ActionItem(title: "Manage AI Commands", icon: "sparkle", shortcut: nil, keepPanel: true) { [weak self] in
+            ActionItem(title: L("search.manageAICommands"), icon: "sparkle", shortcut: nil, keepPanel: true) { [weak self] in
                 self?.goToAICommands()
             },
         ]
@@ -1005,8 +843,9 @@ final class SearchViewModel: ObservableObject {
     var currentActions: [ActionItem] {
         switch page {
         case .main:
-            guard selectedIndex < results.count else { return [] }
-            return results[selectedIndex].actions
+            let displayedResults = displayedApplicationResults
+            guard displayedResults.indices.contains(selectedIndex) else { return [] }
+            return displayedResults[selectedIndex].actions
         default:
             return []
         }
@@ -1019,13 +858,13 @@ final class SearchViewModel: ObservableObject {
     /// App-specific actions.
     static func appActions(path: String) -> [ActionItem] {
         [
-            ActionItem(title: "Open Application", icon: "arrow.up.forward.app", shortcut: "↵") {
+            ActionItem(title: L("action.openApplication"), icon: "arrow.up.forward.app", shortcut: "↵") {
                 NSWorkspace.shared.open(URL(fileURLWithPath: path))
             },
-            ActionItem(title: "Show in Finder", icon: "folder", shortcut: nil) {
+            ActionItem(title: L("action.showFinder"), icon: "folder", shortcut: nil) {
                 NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
             },
-            ActionItem(title: "Show Info in Finder", icon: "info.circle", shortcut: nil) {
+            ActionItem(title: L("action.showInfo"), icon: "info.circle", shortcut: nil) {
                 let url = URL(fileURLWithPath: path)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 // Cmd+I after a short delay
@@ -1039,11 +878,11 @@ final class SearchViewModel: ObservableObject {
                     iUp?.post(tap: .cghidEventTap)
                 }
             },
-            ActionItem(title: "Copy Path", icon: "doc.on.doc", shortcut: nil) {
+            ActionItem(title: L("action.copyPath"), icon: "doc.on.doc", shortcut: nil) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(path, forType: .string)
             },
-            ActionItem(title: "Copy Bundle ID", icon: "number", shortcut: nil) {
+            ActionItem(title: L("action.copyBundleID"), icon: "number", shortcut: nil) {
                 if let bundle = Bundle(path: path), let id = bundle.bundleIdentifier {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(id, forType: .string)
@@ -1054,81 +893,53 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Default Results
 
-    /// Build results shown when search query is empty.
+    /// Build recent applications shown when the search query is empty.
     private func buildDefaultResults() -> [SearchResult] {
-        var results: [SearchResult] = []
-
-        // Frequently used apps (top 5 by ranking)
-        if let cStr = rc_get_top_apps(5) {
-            let jsonStr = String(cString: cStr)
-            rc_free_string(cStr)
-            if let data = jsonStr.data(using: .utf8),
-               let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                for entry in entries {
-                    let name = entry["display_name"] as? String ?? ""
-                    let path = entry["path"] as? String ?? ""
-                    let icon = self.loadAppIcon(path: path)
-                    var result = SearchResult(
-                        title: name,
-                        subtitle: "Application",
-                        icon: icon,
-                        systemIcon: "app.fill"
-                    ) {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                        rc_update_ranking(path)
-                    }
-                    result.actions = Self.appActions(path: path)
-                    results.append(result)
-                }
-            }
-        }
-
-        // Built-in commands
-        results.append(SearchResult(
-            title: "Clipboard History",
-            subtitle: "Command",
-            icon: nil,
-            systemIcon: "doc.on.clipboard"
-        ) { [weak self] in self?.goToClipboard() })
-
-        results.append(SearchResult(
-            title: "Snippets",
-            subtitle: "Command",
-            icon: nil,
-            systemIcon: "text.quote"
-        ) { [weak self] in self?.goToSnippets() })
-
-        // AI surfaces — hidden entirely when the AI master switch is off.
-        if aiEnabled {
-            results.append(SearchResult(
-                title: "AI Commands",
-                subtitle: "Command",
+        guard let cStr = rc_get_top_apps(
+            UInt64(MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount)
+        ) else { return [] }
+        defer { rc_free_string(cStr) }
+        var results = appResults(fromJSON: String(cString: cStr))
+        if let clipboardJSON {
+            results.insert(SearchResult(
+                title: L("search.openJSON"),
+                subtitle: L("search.detectedJSON"),
                 icon: nil,
-                systemIcon: "sparkle"
-            ) { [weak self] in self?.goToAICommands() })
-
-            // AI Commands — sorted by usage, top 4
-            let aiCommands = AICommand.loadAll()
-            let sorted = aiCommands.sorted { a, b in
-                commandRanking(for: a.name) > commandRanking(for: b.name)
-            }
-            for cmd in sorted.prefix(4) {
-                let command = cmd
-                var result = SearchResult(
-                    title: command.name,
-                    subtitle: "AI Command",
-                    icon: nil,
-                    systemIcon: command.icon
-                ) { [weak self] in
-                    self?.incrementCommandRanking(command.name)
-                    self?.executeAICommand(command)
-                }
-                result.actions = aiCommandActions(for: command)
-                results.append(result)
-            }
+                systemIcon: "curlybraces"
+            ) { [weak self] in
+                self?.openJSONFormatter(with: clipboardJSON)
+            }, at: 0)
         }
-
         return results
+    }
+
+    private func loadAllApplications() -> [SearchResult] {
+        guard let cStr = rc_get_all_apps() else { return [] }
+        defer { rc_free_string(cStr) }
+        return appResults(fromJSON: String(cString: cStr))
+    }
+
+    private func appResults(fromJSON json: String) -> [SearchResult] {
+        guard let data = json.data(using: .utf8),
+              let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else { return [] }
+
+        return entries.map { entry in
+            let name = entry["display_name"] as? String ?? ""
+            let path = entry["path"] as? String ?? ""
+            let icon = loadAppIcon(path: path)
+            var result = SearchResult(
+                title: name,
+                subtitle: L("search.application"),
+                icon: icon,
+                systemIcon: "app.fill"
+            ) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                rc_update_ranking(path)
+            }
+            result.actions = Self.appActions(path: path)
+            return result
+        }
     }
 
     // MARK: - AI Commands

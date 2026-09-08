@@ -249,7 +249,7 @@ final class TextExpander {
         usleep(10_000) // 10ms
 
         // Step 3: Type the expansion by writing to clipboard and pasting
-        // Mark as transient so ClipboardMonitor ignores it
+        // Mark as transient for paste restoration
         let pasteboard = NSPasteboard.general
         let oldContents = pasteboard.string(forType: .string)
         pasteboard.clearContents()

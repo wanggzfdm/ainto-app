@@ -3,6 +3,7 @@ import AppKit
 
 /// Claude Code conversation view with streaming responses.
 struct ClaudeView: View {
+    @ObservedObject private var localization = LocalizationManager.shared
     @ObservedObject var viewModel: SearchViewModel
     @FocusState private var isInputFocused: Bool
 
@@ -29,7 +30,7 @@ struct ClaudeView: View {
                         ProgressView()
                             .scaleEffect(0.5)
                             .frame(width: 12, height: 12)
-                        Text("Thinking...")
+                        Text(L("claude.thinking"))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -45,9 +46,9 @@ struct ClaudeView: View {
                 // Empty state
                 VStack(spacing: 16) {
                     ClaudeIcon(size: 48)
-                    Text("Ask Anything")
+                    Text(L("claude.askAnything"))
                         .font(.system(size: 18, weight: .medium))
-                    Text("Type a question and press Enter")
+                    Text(L("claude.askHint"))
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
@@ -77,7 +78,7 @@ struct ClaudeView: View {
 
             // Input bar
             HStack(spacing: 12) {
-                TextField("Follow up...", text: $viewModel.query)
+                TextField(L("claude.followUp"), text: $viewModel.query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($isInputFocused)
@@ -108,11 +109,11 @@ struct ClaudeView: View {
                 Spacer()
                 HStack(spacing: 12) {
                     if !viewModel.claudeMessages.isEmpty && !viewModel.claudeIsStreaming {
-                        KeyHint(keys: ["⌘", "↵"], label: "replace")
-                        KeyHint(keys: ["⌘", "C"], label: "copy")
+                        KeyHint(keys: ["⌘", "↵"], label: L("hint.replace"))
+                        KeyHint(keys: ["⌘", "C"], label: L("hint.copy"))
                     }
-                    KeyHint(keys: ["↵"], label: "send")
-                    KeyHint(keys: ["esc"], label: "back")
+                    KeyHint(keys: ["↵"], label: L("hint.send"))
+                    KeyHint(keys: ["esc"], label: L("hint.back"))
                 }
             }
             .padding(.horizontal, 20)
@@ -146,7 +147,7 @@ struct MessageBubble: View {
                         // Thinking indicator
                         HStack(spacing: 8) {
                             ThinkingDots()
-                            Text("Thinking...")
+                            Text(L("claude.thinking"))
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
                         }

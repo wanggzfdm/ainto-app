@@ -59,6 +59,18 @@ impl AppIndex {
         ranked
     }
 
+    /// Get every discovered app sorted by display name, case-insensitively.
+    pub fn get_all_sorted(&self) -> Vec<&AppEntry> {
+        let mut apps: Vec<&AppEntry> = self.apps.iter().collect();
+        apps.sort_by(|a, b| {
+            a.display_name
+                .to_lowercase()
+                .cmp(&b.display_name.to_lowercase())
+                .then_with(|| a.display_name.cmp(&b.display_name))
+        });
+        apps
+    }
+
     /// Get all favourite apps.
     pub fn get_favourites(&self) -> Vec<&AppEntry> {
         self.apps.iter().filter(|a| a.is_favourite).collect()
@@ -220,6 +232,35 @@ fn camel_case_match(query: &str, display_name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all_apps_are_sorted_by_display_name_case_insensitively() {
+        let index = AppIndex::new(vec![
+            app("zoom", "Zoom"),
+            app("arc", "arc"),
+            app("safari", "Safari"),
+        ]);
+
+        let names: Vec<&str> = index
+            .get_all_sorted()
+            .into_iter()
+            .map(|app| app.display_name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["arc", "Safari", "Zoom"]);
+    }
+
+    fn app(search_name: &str, display_name: &str) -> AppEntry {
+        AppEntry {
+            display_name: display_name.to_string(),
+            search_name: search_name.to_string(),
+            path: format!("/Applications/{display_name}.app"),
+            bundle_id: None,
+            icon_png: None,
+            ranking: 0,
+            is_favourite: false,
+        }
+    }
 
     #[test]
     fn test_exact_match() {

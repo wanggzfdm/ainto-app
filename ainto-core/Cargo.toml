@@ -8,15 +8,6 @@ license = "GPL-3.0-or-later"
 crate-type = ["staticlib"]
 
 [dependencies]
-# SQLite for clipboard persistence
-rusqlite = { version = "0.35", features = ["bundled"] }
-
-# Fast hashing for clipboard dedup
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-
-# Image encoding (RGBA → PNG)
-image = { version = "0.25", default-features = false, features = ["png"] }
-
 # Serialization
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

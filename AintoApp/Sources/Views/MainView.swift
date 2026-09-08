@@ -5,20 +5,28 @@ import AintoCore
 /// Main search view — glassmorphism style matching modern macOS.
 struct MainView: View {
     @ObservedObject var viewModel: SearchViewModel
+    @ObservedObject private var localization = LocalizationManager.shared
 
     var body: some View {
         Group {
             switch viewModel.page {
             case .main:
                 mainSearchView
-            case .clipboard:
-                ClipboardView(viewModel: viewModel)
             case .snippets:
                 SnippetView(viewModel: viewModel)
             case .aiCommands:
                 AICommandView(viewModel: viewModel)
             case .claude:
                 ClaudeView(viewModel: viewModel)
+            case .plugin:
+                if let plugin = viewModel.activePlugin,
+                   let featureCode = viewModel.activePluginFeatureCode {
+                    PluginHostView(
+                        entryURL: plugin.rootURL.appendingPathComponent(plugin.manifest.main),
+                        session: PluginHostSession(pluginID: plugin.id, featureCode: featureCode, query: viewModel.query),
+                        onExit: { viewModel.goBack() }
+                    )
+                }
             }
         }
         .background {
@@ -49,7 +57,28 @@ struct MainView: View {
         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
     }
 
+    private var gridViewportHeight: CGFloat {
+        if viewModel.isApplicationGridExpanded { return 420 }
+        return viewModel.displayedApplicationResults.count > MainSearchGridMetrics.columnCount ? 154 : 82
+    }
+
     private var mainSearchView: some View {
+        VStack(spacing: 0) {
+            mainSearchContent
+            if viewModel.isJSONFormatterExpanded {
+                Divider().opacity(0.5)
+                JSONFormatterView(
+                    text: $viewModel.jsonFormatterInput,
+                    onDetach: { viewModel.requestJSONFormatterWindow() },
+                    onClose: { viewModel.collapseJSONFormatter() }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: viewModel.isJSONFormatterExpanded)
+    }
+
+    private var mainSearchContent: some View {
         VStack(spacing: 0) {
             // Search input
             HStack(spacing: 14) {
@@ -62,7 +91,9 @@ struct MainView: View {
                 }
 
                 TextField(
-                    viewModel.searchMode == .claude ? "Ask Claude anything..." : "Search...",
+                    viewModel.searchMode == .claude
+                        ? L("search.claudePlaceholder")
+                        : "搜索应用和指令/粘贴文件或图片",
                     text: $viewModel.query
                 )
                     .textFieldStyle(.plain)
@@ -76,7 +107,7 @@ struct MainView: View {
                 // Mode indicator — hidden when AI is disabled
                 if viewModel.aiEnabled {
                     HStack(spacing: 4) {
-                        Text(viewModel.searchMode == .claude ? "Search" : "AI mode")
+                        Text(viewModel.searchMode == .claude ? L("search.modeSearch") : L("search.modeAI"))
                             .font(.system(size: 11))
                             .foregroundStyle(.tertiary)
                         Text("Tab")
@@ -95,23 +126,52 @@ struct MainView: View {
                 viewModel.focusFilterField()
             }
 
-            // Results list (hidden in Claude mode)
-            if !viewModel.results.isEmpty && viewModel.searchMode == .apps {
-                Divider()
-                    .opacity(0.5)
+            // Results grid (hidden in Claude mode)
+            if !viewModel.isJSONFormatterExpanded,
+               !viewModel.displayedApplicationResults.isEmpty,
+               viewModel.searchMode == .apps {
+                HStack {
+                    Text(viewModel.query.isEmpty ? "最近使用" : "搜索结果")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if viewModel.query.isEmpty, viewModel.expandableApplicationCount > 0 {
+                        Button {
+                            viewModel.setApplicationGridExpanded(!viewModel.isApplicationGridExpanded)
+                        } label: {
+                            Text(
+                                viewModel.isApplicationGridExpanded
+                                    ? "收起"
+                                    : "展开（\(viewModel.expandableApplicationCount)）"
+                            )
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 5)
 
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(Array(viewModel.results.enumerated()), id: \.element.id) { index, result in
-                                ResultRow(
+                    ScrollView(.vertical, showsIndicators: viewModel.isApplicationGridExpanded || !viewModel.query.isEmpty) {
+                        LazyVGrid(
+                            columns: Array(
+                                repeating: GridItem(.flexible(), spacing: 8),
+                                count: MainSearchGridMetrics.columnCount
+                            ),
+                            spacing: 8
+                        ) {
+                            ForEach(Array(viewModel.displayedApplicationResults.enumerated()), id: \.element.id) { index, result in
+                                ResultGridItem(
                                     result: result,
                                     isSelected: index == viewModel.selectedIndex
                                 )
                                 .id(result.id)
                                 .onTapGesture(count: 2) {
                                     viewModel.selectedIndex = index
-                                    viewModel.openSelected()
+                                    result.action()
                                 }
                                 .onTapGesture(count: 1) {
                                     viewModel.selectedIndex = index
@@ -127,46 +187,24 @@ struct MainView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
                     }
-                    .frame(maxHeight: 400)
+                    .frame(
+                        height: gridViewportHeight
+                    )
                     .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                        if newIndex < viewModel.results.count {
-                            proxy.scrollTo(viewModel.results[newIndex].id)
+                        let displayedResults = viewModel.displayedApplicationResults
+                        if displayedResults.indices.contains(newIndex) {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                proxy.scrollTo(displayedResults[newIndex].id, anchor: .center)
+                            }
                         }
                     }
                 }
             }
-
-            // Footer
-            Divider()
-                .opacity(0.3)
-            HStack {
-                if !viewModel.query.isEmpty && viewModel.searchMode == .apps {
-                    Text(viewModel.statusText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-                Spacer()
-                HStack(spacing: 12) {
-                    if !viewModel.results.isEmpty && viewModel.searchMode == .apps {
-                        KeyHint(keys: ["⌘", "K"], label: "actions")
-                        KeyHint(keys: ["↑", "↓"], label: "navigate")
-                        KeyHint(keys: ["↵"], label: "open")
-                    }
-                    if !viewModel.query.isEmpty {
-                        KeyHint(keys: ["esc"], label: "clear")
-                    }
-                    if viewModel.aiEnabled {
-                        KeyHint(keys: ["Tab"], label: "AI mode")
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
         }
-        .frame(width: 680)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 800)
         .onChange(of: viewModel.query) { _, newValue in
             viewModel.performSearch(query: newValue)
         }
@@ -181,46 +219,43 @@ struct MainView: View {
     }
 }
 
-/// A single search result row.
-struct ResultRow: View {
+/// A single result in the uTools-style application grid.
+struct ResultGridItem: View {
     let result: SearchResult
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 14) {
-            // App icon
+        VStack(spacing: 5) {
             Image(nsImage: result.displayIcon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+                .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.title)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .white : .primary)
-                    .lineLimit(1)
-                Text(result.subtitle)
-                    .font(.system(size: 11))
-                    .foregroundColor(isSelected ? .white.opacity(0.75) : .secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
+            Text(result.title)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .frame(height: 68)
+        .padding(.horizontal, 3)
         .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
+        }
+        .overlay {
             if isSelected {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.85))
+                    .strokeBorder(Color.accentColor.opacity(0.72), lineWidth: 1)
             }
         }
-        .padding(.horizontal, 4)
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
-/// Keyboard shortcut hint badge.
+/// Keyboard shortcut hint badge reused by secondary pages.
 struct KeyHint: View {
     let keys: [String]
     let label: String

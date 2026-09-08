@@ -4,6 +4,7 @@ import AintoCore
 
 /// Snippet management sub-page — list + preview/edit.
 struct SnippetView: View {
+    @ObservedObject private var localization = LocalizationManager.shared
     @ObservedObject var viewModel: SearchViewModel
     @FocusState private var isFilterFocused: Bool
 
@@ -23,7 +24,7 @@ struct SnippetView: View {
                         .foregroundStyle(.red)
                         .font(.system(size: 16))
 
-                    Text(isNewSnippet ? "Create Snippet" : "Edit Snippet")
+                    Text(isNewSnippet ? L("snippet.create") : L("snippet.edit"))
                         .font(.system(size: 16, weight: .medium))
 
                     Spacer()
@@ -48,7 +49,7 @@ struct SnippetView: View {
                         .foregroundStyle(.secondary)
                         .font(.system(size: 16))
 
-                    TextField("Filter snippets...", text: $viewModel.snippetFilter)
+                    TextField(L("snippet.filter"), text: $viewModel.snippetFilter)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .focused($isFilterFocused)
@@ -69,10 +70,10 @@ struct SnippetView: View {
                     Image(systemName: "text.quote")
                         .font(.system(size: 40))
                         .foregroundStyle(.quaternary)
-                    Text("No snippets")
+                    Text(L("snippet.empty"))
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
-                    Text("Press ⌘N to create one")
+                    Text(L("snippet.createHint"))
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                 }
@@ -128,20 +129,20 @@ struct SnippetView: View {
             Divider().opacity(0.3)
             HStack {
                 if !viewModel.isEditingSnippet {
-                    Text("\(viewModel.filteredSnippets.count) snippets")
+                    Text(LocalizationManager.shared.format("snippet.count", viewModel.filteredSnippets.count))
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
                 HStack(spacing: 12) {
                     if viewModel.isEditingSnippet {
-                        KeyHint(keys: ["⌘", "↵"], label: "save")
-                        KeyHint(keys: ["esc"], label: "cancel")
+                        KeyHint(keys: ["⌘", "↵"], label: L("hint.save"))
+                        KeyHint(keys: ["esc"], label: L("hint.cancel"))
                     } else {
-                        KeyHint(keys: ["⌘", "N"], label: "new")
-                        KeyHint(keys: ["⌘", "E"], label: "edit")
-                        KeyHint(keys: ["↵"], label: "paste")
-                        KeyHint(keys: ["esc"], label: "back")
+                        KeyHint(keys: ["⌘", "N"], label: L("hint.new"))
+                        KeyHint(keys: ["⌘", "E"], label: L("hint.edit"))
+                        KeyHint(keys: ["↵"], label: L("hint.paste"))
+                        KeyHint(keys: ["esc"], label: L("hint.back"))
                     }
                 }
             }
@@ -175,7 +176,7 @@ struct SnippetItemRow: View {
                 .foregroundStyle(isSelected ? .white : .secondary)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(snippet.name.isEmpty ? "Untitled" : snippet.name)
+                Text(snippet.name.isEmpty ? L("snippet.untitled") : snippet.name)
                     .font(.system(size: 13))
                     .foregroundColor(isSelected ? .white : .primary)
                     .lineLimit(1)
@@ -230,13 +231,13 @@ struct SnippetPreview: View {
 
                 // Info
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Information")
+                    Text(L("snippet.information"))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
 
-                    MetadataRow(label: "Name", value: snippet.name)
-                    MetadataRow(label: "Keyword", value: snippet.keyword)
-                    MetadataRow(label: "Characters", value: "\(snippet.expansion.count)")
+                    MetadataRow(label: L("snippet.name"), value: snippet.name)
+                    MetadataRow(label: L("snippet.keyword"), value: snippet.keyword)
+                    MetadataRow(label: L("snippet.characters"), value: "\(snippet.expansion.count)")
                 }
                 .padding(12)
 
@@ -245,7 +246,7 @@ struct SnippetPreview: View {
                 // Actions
                 HStack {
                     Button(action: onEdit) {
-                        Label("Edit", systemImage: "pencil")
+                        Label(L("common.edit"), systemImage: "pencil")
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
@@ -253,7 +254,7 @@ struct SnippetPreview: View {
                     Spacer()
 
                     Button(action: { onDelete(snippet.id) }) {
-                        Label("Delete", systemImage: "trash")
+                        Label(L("common.delete"), systemImage: "trash")
                             .font(.system(size: 11))
                             .foregroundColor(.red)
                     }
@@ -267,7 +268,7 @@ struct SnippetPreview: View {
                 Image(systemName: "text.quote")
                     .font(.system(size: 30))
                     .foregroundStyle(.quaternary)
-                Text("Select a snippet")
+                Text(L("snippet.select"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -295,8 +296,8 @@ struct SnippetEditForm: View {
             ScrollView {
                 VStack(spacing: 20) {
                     // Name — auto focus via AppKit
-                    FormRow(label: "Name") {
-                        TextField("Snippet name", text: binding(\.name))
+                    FormRow(label: L("snippet.name")) {
+                        TextField(L("snippet.formName"), text: binding(\.name))
                             .textFieldStyle(.plain)
                             .font(.system(size: 14))
                             .padding(.horizontal, 10)
@@ -310,7 +311,7 @@ struct SnippetEditForm: View {
                     }
 
                     // Snippet (expansion text)
-                    FormRow(label: "Snippet") {
+                    FormRow(label: L("snippet.snippet")) {
                         VStack(alignment: .leading, spacing: 8) {
                             TextEditor(text: binding(\.expansion))
                                 .font(.system(size: 13))
@@ -320,15 +321,15 @@ struct SnippetEditForm: View {
                                 .background(Color.primary.opacity(0.06))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                            Text("Include **Dynamic Placeholders** for context like the copied text or the current date: `{date}` `{time}` `{clipboard}` `{uuid}`")
+                            Text(L("snippet.dynamicHint"))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                         }
                     }
 
                     // Keyword
-                    FormRow(label: "Keyword") {
-                        TextField("Optional keyword", text: binding(\.keyword))
+                    FormRow(label: L("snippet.keyword")) {
+                        TextField(L("snippet.keywordPlaceholder"), text: binding(\.keyword))
                             .textFieldStyle(.plain)
                             .font(.system(size: 14, design: .monospaced))
                             .padding(.horizontal, 10)

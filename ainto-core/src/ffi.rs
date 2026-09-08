@@ -8,14 +8,13 @@ use std::os::raw::c_char;
 use std::ptr;
 use std::sync::Mutex;
 
-use crate::{clipboard_store, config, discovery, search, snippets};
+use crate::{config, discovery, search, snippets};
 
 // ============================================================
 // Global State
 // ============================================================
 
 static APP_INDEX: Mutex<Option<search::AppIndex>> = Mutex::new(None);
-static CLIPBOARD_STORE: Mutex<Option<clipboard_store::ClipboardStore>> = Mutex::new(None);
 
 fn to_c_string(s: &str) -> *const c_char {
     CString::new(s)
@@ -168,6 +167,30 @@ pub extern "C" fn rc_get_top_apps(limit: u64) -> *const c_char {
     to_c_string(&json)
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn rc_get_all_apps() -> *const c_char {
+    let guard = APP_INDEX.lock().ok();
+    let results = guard
+        .as_ref()
+        .and_then(|opt| opt.as_ref())
+        .map(|idx| {
+            idx.get_all_sorted()
+                .iter()
+                .map(|a| {
+                    serde_json::json!({
+                        "display_name": a.display_name,
+                        "path": a.path,
+                        "ranking": a.ranking,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let json = serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string());
+    to_c_string(&json)
+}
+
 /// Increment ranking for any key (app path or "cmd:name") and persist.
 /// Returns the new frecency score.
 #[unsafe(no_mangle)]
@@ -218,237 +241,6 @@ pub extern "C" fn rc_update_ranking(app_path: *const c_char) {
     }
 }
 
-// ============================================================
-// Clipboard Store
-// ============================================================
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_init(max_text_items: u64, max_image_items: u64) -> i32 {
-    let Ok(cfg_dir) = config::config_dir() else {
-        return -1;
-    };
-    let db_path = cfg_dir.join("clipboard.db");
-    let image_dir = cfg_dir.join("clipboard");
-
-    match clipboard_store::ClipboardStore::open(
-        &db_path,
-        &image_dir,
-        max_text_items as usize,
-        max_image_items as usize,
-    ) {
-        Ok(store) => {
-            if let Ok(mut guard) = CLIPBOARD_STORE.lock() {
-                *guard = Some(store);
-            }
-            0
-        }
-        Err(_) => -1,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_set_limits(max_text_items: u64, max_image_items: u64) -> i32 {
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-    match store.set_limits(max_text_items as usize, max_image_items as usize) {
-        Ok(()) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_text(
-    text: *const c_char,
-    source_app: *const c_char,
-) -> i64 {
-    let Some(text_str) = from_c_str(text) else {
-        return -1;
-    };
-    let source = from_c_str(source_app);
-    let content = clipboard_store::ClipboardContent::Text(text_str);
-    let hash = clipboard_store::hash_content(&content);
-
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-
-    store
-        .insert(&content, hash, source.as_deref())
-        .unwrap_or(-1)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_image(
-    png_data: *const u8,
-    png_len: u64,
-    width: u32,
-    height: u32,
-    source_app: *const c_char,
-) -> i64 {
-    if png_data.is_null() || png_len == 0 || png_len > 50_000_000 {
-        return -1;
-    }
-    let bytes = unsafe { std::slice::from_raw_parts(png_data, png_len as usize) }.to_vec();
-    let source = from_c_str(source_app);
-    let content = clipboard_store::ClipboardContent::Image {
-        png_bytes: bytes,
-        width,
-        height,
-        filename: None,
-    };
-    let hash = clipboard_store::hash_content(&content);
-
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-
-    store
-        .insert(&content, hash, source.as_deref())
-        .unwrap_or(-1)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_insert_file(
-    path: *const c_char,
-    source_app: *const c_char,
-) -> i64 {
-    let Some(path_str) = from_c_str(path) else {
-        return -1;
-    };
-    let source = from_c_str(source_app);
-    let content = clipboard_store::ClipboardContent::File { path: path_str };
-    let hash = clipboard_store::hash_content(&content);
-
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-
-    store
-        .insert(&content, hash, source.as_deref())
-        .unwrap_or(-1)
-}
-
-fn entry_to_json(e: &clipboard_store::ClipboardEntry) -> serde_json::Value {
-    let (content_type, text, file_path, image_filename) = match &e.content {
-        clipboard_store::ClipboardContent::Text(t) => ("text", Some(t.as_str()), None, None),
-        clipboard_store::ClipboardContent::Image { filename, .. } => {
-            ("image", None, None, filename.as_deref())
-        }
-        clipboard_store::ClipboardContent::File { path } => {
-            ("file", None, Some(path.as_str()), None)
-        }
-    };
-    serde_json::json!({
-        "id": e.id,
-        "content_type": content_type,
-        "text": text,
-        "file_path": file_path,
-        "image_filename": image_filename,
-        "hash": e.hash,
-        "source_app": e.source_app,
-        "last_copied_at": e.last_copied_at,
-        "copy_count": e.copy_count,
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_image_dir() -> *const c_char {
-    match config::config_dir() {
-        Ok(dir) => to_c_string(&dir.join("clipboard").to_string_lossy()),
-        Err(_) => ptr::null(),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_get_recent(limit: u64) -> *const c_char {
-    let guard = CLIPBOARD_STORE.lock().ok();
-    let entries = guard
-        .as_ref()
-        .and_then(|opt| opt.as_ref())
-        .and_then(|store| store.get_recent(limit as usize).ok())
-        .unwrap_or_default();
-
-    let json_entries: Vec<serde_json::Value> = entries.iter().map(entry_to_json).collect();
-    let json = serde_json::to_string(&json_entries).unwrap_or_else(|_| "[]".to_string());
-    to_c_string(&json)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_get_recent_paged(limit: u64, offset: u64) -> *const c_char {
-    let guard = CLIPBOARD_STORE.lock().ok();
-    let entries = guard
-        .as_ref()
-        .and_then(|opt| opt.as_ref())
-        .and_then(|store| store.get_recent_paged(limit as usize, offset as usize).ok())
-        .unwrap_or_default();
-
-    let json_entries: Vec<serde_json::Value> = entries.iter().map(entry_to_json).collect();
-    let json = serde_json::to_string(&json_entries).unwrap_or_else(|_| "[]".to_string());
-    to_c_string(&json)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_search(query: *const c_char) -> *const c_char {
-    rc_clipboard_search_paged(query, 50, 0)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_search_paged(query: *const c_char, limit: u64, offset: u64) -> *const c_char {
-    let Some(q) = from_c_str(query) else {
-        return to_c_string("[]");
-    };
-    let guard = CLIPBOARD_STORE.lock().ok();
-    let entries = guard
-        .as_ref()
-        .and_then(|opt| opt.as_ref())
-        .and_then(|store| store.search_paged(&q, limit as usize, offset as usize).ok())
-        .unwrap_or_default();
-
-    let json_entries: Vec<serde_json::Value> = entries.iter().map(entry_to_json).collect();
-    let json = serde_json::to_string(&json_entries).unwrap_or_else(|_| "[]".to_string());
-    to_c_string(&json)
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_delete(id: i64) -> i32 {
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-    match store.delete(id) {
-        Ok(()) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rc_clipboard_clear() -> i32 {
-    let Ok(mut guard) = CLIPBOARD_STORE.lock() else {
-        return -1;
-    };
-    let Some(ref mut store) = *guard else {
-        return -1;
-    };
-    match store.clear() {
-        Ok(()) => 0,
-        Err(_) => -1,
-    }
-}
 
 // ============================================================
 // Snippets
