@@ -21,6 +21,16 @@ public struct JSONEditorView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 180)
+                if mode == .tree {
+                    Button(L("json.collapseAll")) {
+                        root.map { JSONFormatterCore.setExpansion(of: $0, expanded: false) }
+                    }
+                    .controlSize(.small)
+                    Button(L("json.expandAll")) {
+                        root.map { JSONFormatterCore.setExpansion(of: $0, expanded: true) }
+                    }
+                    .controlSize(.small)
+                }
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -183,9 +193,20 @@ public struct JSONFormatterView: View {
                 Button(L("json.minify")) { run { try JSONFormatterCore.compact(text) } }
                     .controlSize(.small)
                 Menu {
-                    Button(L("json.copy")) {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
+                    Button(L("json.copy")) { copy(text) }
+                    Button(L("json.compactCopy")) {
+                        run {
+                            let compact = try JSONFormatterCore.compact(text)
+                            copy(compact)
+                            return text
+                        }
+                    }
+                    Button(L("json.escapedCompactCopy")) {
+                        run {
+                            let escaped = try JSONFormatterCore.escapedCompact(text)
+                            copy(escaped)
+                            return text
+                        }
                     }
                     Button(L("json.clear"), role: .destructive) { text = ""; message = nil }
                     if let onDetach { Button(L("json.openWindow"), action: onDetach) }
@@ -209,6 +230,10 @@ public struct JSONFormatterView: View {
             if let message { Text(message).foregroundStyle(.red).font(.caption).padding(.bottom, 8) }
         }
         .frame(maxWidth: .infinity)
+    }
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
     private func run(_ operation: () throws -> String) {
         do { text = try operation(); message = nil }

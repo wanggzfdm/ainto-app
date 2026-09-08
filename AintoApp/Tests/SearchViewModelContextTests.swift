@@ -8,7 +8,10 @@ final class SearchViewModelContextTests: XCTestCase {
         let json = "  {\n  \"name\": \"Ainto\"\n}  "
 
         viewModel.updateClipboardContext(json)
-
+        viewModel.applyApplicationRefresh(
+            allApplications: [],
+            recentApplications: viewModel.results
+        )
         let result = viewModel.results.first { $0.title == L("search.openJSON") }
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.subtitle, L("search.detectedJSON"))
@@ -16,9 +19,30 @@ final class SearchViewModelContextTests: XCTestCase {
         result?.action()
         XCTAssertEqual(viewModel.page, .main)
         XCTAssertTrue(viewModel.isJSONFormatterExpanded)
-        XCTAssertEqual(viewModel.jsonFormatterInput, json)
+        XCTAssertEqual(viewModel.jsonFormatterInput, try JSONFormatterCore.format(json))
+        XCTAssertTrue(viewModel.hasClipboardJSON)
     }
 
+    func testEscapedJSONClipboardIsDecodedOnceBeforeFormatting() throws {
+        let viewModel = SearchViewModel()
+        let escapedJSON = "\"{\\\"name\\\":\\\"Ainto\\\"}\""
+
+        viewModel.updateClipboardContext(escapedJSON)
+        viewModel.applyApplicationRefresh(
+            allApplications: [],
+            recentApplications: viewModel.results
+        )
+        viewModel.results.first?.action()
+
+        XCTAssertEqual(viewModel.jsonFormatterInput, try JSONFormatterCore.format("{\"name\":\"Ainto\"}"))
+    }
+
+    func testPlainJSONStringClipboardIsNotDecodedAsJSONDocument() {
+        let viewModel = SearchViewModel()
+        viewModel.updateClipboardContext("\"hello\"")
+
+        XCTAssertFalse(viewModel.results.contains { $0.title == L("search.openJSON") })
+    }
     func testDetachingFormatterCollapsesInlineWithoutLosingContent() {
         let viewModel = SearchViewModel()
         viewModel.openJSONFormatter(with: "{\"value\":1}")
@@ -39,6 +63,15 @@ final class SearchViewModelContextTests: XCTestCase {
 
         XCTAssertFalse(viewModel.shouldOpenJSONFormatterWindow)
         XCTAssertEqual(viewModel.jsonFormatterInput, "[1,2]")
+    }
+
+    func testUpdatingQueryPublishesMatchingResultsImmediately() {
+        let viewModel = SearchViewModel()
+
+        viewModel.updateQuery("json")
+
+        XCTAssertEqual(viewModel.query, "json")
+        XCTAssertTrue(viewModel.results.contains { $0.title == L("json.title") })
     }
 
     func testNonJSONClipboardDoesNotAddContextCommand() {

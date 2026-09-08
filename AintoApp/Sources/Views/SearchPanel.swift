@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class SearchPanel: NSPanel {
     private let hostingView: NSHostingView<MainView>
-    let viewModel = SearchViewModel()
+    let viewModel: SearchViewModel
 
     /// The app that was frontmost before we showed the panel.
     private var previousApp: NSRunningApplication?
@@ -16,8 +16,10 @@ final class SearchPanel: NSPanel {
     private var jsonFormatterWindow: NSWindow?
     private var jsonFormatterWindowDelegate: JSONFormatterWindowDelegate?
     private var actionSelectedIndex = 0
+    private var pluginSizeLifecycle = PluginPanelSizeLifecycle()
 
-    init() {
+    init(viewModel: SearchViewModel = SearchViewModel()) {
+        self.viewModel = viewModel
         let mainView = MainView(viewModel: viewModel)
         hostingView = NSHostingView(rootView: mainView)
         hostingView.sizingOptions = []
@@ -71,6 +73,16 @@ final class SearchPanel: NSPanel {
 
         viewModel.onOpenJSONFormatterWindow = { [weak self] in
             self?.openJSONFormatterWindow()
+        }
+
+        viewModel.onPluginFeatureSelected = { [weak self] _, _ in
+            self?.enterPlugin()
+        }
+        viewModel.onPluginResize = { [weak self] size in
+            self?.resizeForPlugin(size) ?? size
+        }
+        viewModel.onPluginExit = { [weak self] in
+            self?.restoreSizeAfterPlugin()
         }
 
         viewModel.onJSONFormatterExpansionChanged = { [weak self] expanded in
@@ -153,6 +165,21 @@ final class SearchPanel: NSPanel {
         NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
+    }
+
+    private func resizeForPlugin(_ size: PluginHostSize) -> PluginHostSize {
+        let clamped = pluginSizeLifecycle.resize(width: size.width, height: size.height)
+        setFrame(NSRect(x: frame.origin.x, y: frame.maxY - clamped.height, width: clamped.width, height: clamped.height), display: true, animate: true)
+        return clamped
+    }
+
+    private func enterPlugin() {
+        _ = pluginSizeLifecycle.enter(pluginFrom: PluginHostSize(width: frame.width, height: frame.height))
+    }
+
+    private func restoreSizeAfterPlugin() {
+        guard let size = pluginSizeLifecycle.exit() else { return }
+        setFrame(NSRect(x: frame.origin.x, y: frame.maxY - size.height, width: size.width, height: size.height), display: true, animate: true)
     }
 
     private func resizePanel(for state: MainPanelContentState, animate: Bool = true) {
@@ -562,7 +589,9 @@ final class SearchPanel: NSPanel {
                 return nil
             case 53: // Escape
                 if self.viewModel.page != .main {
+                    let wasPlugin = self.viewModel.page == .plugin
                     self.viewModel.goBack()
+                    if wasPlugin { self.restoreSizeAfterPlugin() }
                 } else if self.viewModel.isJSONFormatterExpanded {
                     self.viewModel.collapseJSONFormatter()
                 } else if self.viewModel.query.isEmpty {

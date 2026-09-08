@@ -119,6 +119,7 @@ enum LauncherPage: Equatable {
     case aiCommands
     case claude
     case plugin
+    case pluginCenter
 }
 
 enum SearchMode: Equatable {
@@ -187,8 +188,18 @@ final class SearchViewModel: ObservableObject {
     @Published var isJSONFormatterExpanded = false
     @Published var shouldOpenJSONFormatterWindow = false
     private var clipboardJSON: String?
-    private let pluginRegistry = PluginRegistry()
+    let pluginRegistry: PluginRegistry
+    let pluginPermissionStore: PluginPermissionStore
+    let pluginLogStore: PluginLogStore
+    let pluginPaths: PluginPaths
     private let pluginSearchProvider = PluginSearchProvider()
+
+    init(pluginRegistry: PluginRegistry = PluginRegistry(), pluginPermissionStore: PluginPermissionStore = PluginPermissionStore(), pluginLogStore: PluginLogStore = PluginLogStore(), pluginPaths: PluginPaths = .applicationSupport) {
+        self.pluginRegistry = pluginRegistry
+        self.pluginPermissionStore = pluginPermissionStore
+        self.pluginLogStore = pluginLogStore
+        self.pluginPaths = pluginPaths
+    }
     @Published var activePlugin: PluginRegistration?
     @Published var activePluginFeatureCode: String?
     // Claude state
@@ -232,6 +243,8 @@ final class SearchViewModel: ObservableObject {
     var onSnippetsChanged: (() -> Void)?
     var onOpenJSONFormatterWindow: (() -> Void)?
     var onPluginFeatureSelected: ((String, String) -> Void)?
+    var onPluginResize: ((PluginHostSize) -> PluginHostSize)?
+    var onPluginExit: (() -> Void)?
     var onJSONFormatterExpansionChanged: ((Bool) -> Void)?
     var onApplicationGridExpansionChanged: (() -> Void)?
     var onResultsChanged: (() -> Void)?
@@ -258,15 +271,31 @@ final class SearchViewModel: ObservableObject {
 
     func updateClipboardContext(_ text: String?) {
         let original = text ?? ""
-        clipboardJSON = JSONFormatterCore.isValidJSON(original) ? original : nil
+        clipboardJSON = JSONFormatterCore.decodeJSONDocumentStringOnce(original)
+            ?? (JSONFormatterCore.isValidJSON(original) ? original : nil)
+        if clipboardJSON != nil {
+            query = ""
+        }
         if page == .main && query.isEmpty {
             results = buildDefaultResults()
             selectedIndex = 0
         }
     }
 
-    func openJSONFormatter(with text: String? = nil) {
-        jsonFormatterInput = text ?? clipboardJSON ?? ""
+    /// Update the query and its results in the same input event, avoiding a deferred view update.
+    func updateQuery(_ newQuery: String) {
+        guard query != newQuery else { return }
+        query = newQuery
+        performSearch(query: newQuery)
+    }
+
+    func openJSONFormatter(with text: String? = nil, format: Bool = false) {
+        let input = text ?? clipboardJSON ?? ""
+        if format, let formatted = try? JSONFormatterCore.format(input) {
+            jsonFormatterInput = formatted
+        } else {
+            jsonFormatterInput = input
+        }
         page = .main
         searchMode = .apps
         isJSONFormatterExpanded = true
@@ -293,22 +322,34 @@ final class SearchViewModel: ObservableObject {
         shouldOpenJSONFormatterWindow = false
     }
 
+    var hasClipboardJSON: Bool { clipboardJSON != nil }
+
+    var searchPlaceholder: String {
+        searchMode == .claude
+            ? L("search.claudePlaceholder")
+            : "搜索应用和指令/粘贴文件或图片"
+    }
+
     var displayedApplicationResults: [SearchResult] {
         guard query.isEmpty else { return results }
         guard isApplicationIndexReady else { return [] }
+        let applications: [SearchResult]
         if isApplicationGridExpanded {
-            return allApplications
+            applications = allApplications
+        } else {
+            let recentApplications = results.filter { $0.subtitle == L("search.application") }
+            applications = ApplicationGridPresentation.collapsedItems(
+                recent: recentApplications,
+                all: allApplications,
+                maximumCount: MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount,
+                id: { $0.subtitle + "\u{0}" + $0.title }
+            )
         }
-
-        let recentApplications = results.filter { $0.subtitle == L("search.application") }
-        return ApplicationGridPresentation.collapsedItems(
-            recent: recentApplications,
-            all: allApplications,
-            maximumCount: MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount,
-            id: { $0.subtitle + "\u{0}" + $0.title }
-        )
+        if let clipboardCommand = results.first(where: { $0.title == L("search.openJSON") }) {
+            return [clipboardCommand] + applications
+        }
+        return applications
     }
-
     var expandableApplicationCount: Int {
         allApplications.count
     }
@@ -391,6 +432,7 @@ final class SearchViewModel: ObservableObject {
     }
 
     func goBack() {
+        let wasPlugin = page == .plugin
         if page == .claude {
             claudeCancel()
             claudeMessages.removeAll()
@@ -404,6 +446,7 @@ final class SearchViewModel: ObservableObject {
         activePlugin = nil
         activePluginFeatureCode = nil
         searchMode = .apps
+        if wasPlugin { onPluginExit?() }
         // TextField is always in the view hierarchy (ZStack), so focus immediately.
         // selectAll is chained after focus succeeds to avoid race conditions.
         focusFilterField(then: { [weak self] in self?.selectAll() })
@@ -565,6 +608,12 @@ final class SearchViewModel: ObservableObject {
             })
         }
 
+        if ["plugins", "plugin center", "插件", "插件中心", "插件市场"].contains(where: { fuzzyMatch(q, $0) }) {
+            commandResults.append(SearchResult(title: L("plugin.center.title"), subtitle: L("search.command"), icon: nil, systemIcon: "puzzlepiece.extension", score: fuzzyScore(query, "Plugin Center")) { [weak self] in
+                self?.page = .pluginCenter
+            })
+        }
+
         loadPluginsIfNeeded()
         let pluginResults = pluginSearchProvider.candidates(from: pluginRegistry.plugins)
             .filter { pluginSearchProvider.matches(query: query, candidate: $0) }
@@ -604,7 +653,7 @@ final class SearchViewModel: ObservableObject {
         case .main:
             guard !results.isEmpty else { return }
             selectedIndex = max(0, min(selectedIndex + offset, results.count - 1))
-        case .claude, .plugin:
+        case .claude, .plugin, .pluginCenter:
             break // no list navigation on non-list pages
         }
     }
@@ -619,7 +668,7 @@ final class SearchViewModel: ObservableObject {
             let displayedResults = displayedApplicationResults
             guard displayedResults.indices.contains(selectedIndex) else { return }
             displayedResults[selectedIndex].action()
-        case .claude, .plugin:
+        case .claude, .plugin, .pluginCenter:
             break
         }
     }
@@ -907,7 +956,7 @@ final class SearchViewModel: ObservableObject {
                 icon: nil,
                 systemIcon: "curlybraces"
             ) { [weak self] in
-                self?.openJSONFormatter(with: clipboardJSON)
+                self?.openJSONFormatter(with: clipboardJSON, format: true)
             }, at: 0)
         }
         return results

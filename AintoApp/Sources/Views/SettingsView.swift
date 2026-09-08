@@ -7,7 +7,13 @@ import Sparkle
 /// Settings — clean sidebar + card-based content.
 struct SettingsView: View {
     var hotkeyManager: HotkeyManager?
+    private let pluginCenterModel: PluginCenterModel
     @ObservedObject private var localization = LocalizationManager.shared
+
+    init(hotkeyManager: HotkeyManager? = nil, pluginRegistry: PluginRegistry = PluginRegistry(), pluginPermissionStore: PluginPermissionStore = PluginPermissionStore(), pluginLogStore: PluginLogStore = PluginLogStore()) {
+        self.hotkeyManager = hotkeyManager
+        self.pluginCenterModel = PluginCenterModel(registry: pluginRegistry, permissionStore: pluginPermissionStore, logStore: pluginLogStore)
+    }
 
     @State private var claudeBinary: String = "claude"
     @State private var aiEnabled: Bool = true
@@ -24,6 +30,7 @@ struct SettingsView: View {
         case ai = "AI"
         case snippets = "Snippets"
         case data = "Data"
+        case plugins = "Plugins"
         case about = "About"
 
         @MainActor
@@ -33,6 +40,7 @@ struct SettingsView: View {
             case .ai: return L("settings.ai")
             case .snippets: return L("settings.snippets")
             case .data: return L("settings.data")
+            case .plugins: return L("settings.plugins")
             case .about: return L("settings.about")
             }
         }
@@ -43,6 +51,7 @@ struct SettingsView: View {
             case .ai: return "sparkle"
             case .snippets: return "text.quote"
             case .data: return "folder"
+            case .plugins: return "puzzlepiece.extension"
             case .about: return "info.circle"
             }
         }
@@ -75,6 +84,7 @@ struct SettingsView: View {
                     case .ai: aiSection
                     case .snippets: snippetsSection
                     case .data: dataSection
+                    case .plugins: PluginCenterView(model: pluginCenterModel)
                     case .about: aboutSection
                     }
                 }

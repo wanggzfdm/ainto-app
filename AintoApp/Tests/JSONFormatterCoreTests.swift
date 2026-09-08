@@ -4,6 +4,23 @@ import XCTest
 final class JSONFormatterCoreTests: XCTestCase {
     func testPrettyObject() throws { XCTAssertEqual(try JSONFormatterCore.format("{\"b\":2,\"a\":1}"), "{\n  \"b\" : 2,\n  \"a\" : 1\n}") }
     func testCompactPreservesStringWhitespaceAndPunctuation() throws { let input = "{\"s\":\" a,}\"}"; XCTAssertEqual(try JSONFormatterCore.compact(input), input) }
+    func testEscapedCompactWrapsCompactJSONInAJSONString() throws {
+        XCTAssertEqual(
+            try JSONFormatterCore.escapedCompact("{\"name\":\"Ainto\",\"enabled\":true}"),
+            "\"{\\\"name\\\":\\\"Ainto\\\",\\\"enabled\\\":true}\""
+        )
+    }
+    func testRecursivelyExpandsAndCollapsesTree() throws {
+        let root = try JSONFormatterCore.tree("{\"object\":{\"array\":[1]}}")
+        JSONFormatterCore.setExpansion(of: root, expanded: false)
+        XCTAssertFalse(root.isExpanded)
+        XCTAssertFalse(root.children[0].isExpanded)
+        XCTAssertFalse(root.children[0].children[0].isExpanded)
+        JSONFormatterCore.setExpansion(of: root, expanded: true)
+        XCTAssertTrue(root.isExpanded)
+        XCTAssertTrue(root.children[0].isExpanded)
+        XCTAssertTrue(root.children[0].children[0].isExpanded)
+    }
     func testScalarString() throws { XCTAssertEqual(try JSONFormatterCore.compact("\"hello\""), "\"hello\"") }
     func testScalarNumber() throws { XCTAssertEqual(try JSONFormatterCore.compact("-1.25e2"), "-125") }
     func testScalarBool() throws { XCTAssertEqual(try JSONFormatterCore.compact("true"), "true") }

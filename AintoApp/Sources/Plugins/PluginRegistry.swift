@@ -86,7 +86,9 @@ final class PluginRegistry {
 
     func register(_ registration: PluginRegistration) throws {
         plugins.removeAll { $0.id == registration.id }
-        plugins.append(registration)
+        var normalized = registration
+        if registration.compatibility != .webCompatible { normalized.isEnabled = false }
+        plugins.append(normalized)
         try save()
     }
 
@@ -97,7 +99,7 @@ final class PluginRegistry {
     }
     func setEnabled(_ enabled: Bool, id: String) throws {
         guard let index = plugins.firstIndex(where: { $0.id == id }) else { return }
-        plugins[index].isEnabled = enabled
+        plugins[index].isEnabled = enabled && plugins[index].compatibility == .webCompatible
         try save()
     }
 

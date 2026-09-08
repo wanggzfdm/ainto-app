@@ -6,6 +6,10 @@ import Sparkle
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var searchPanel: SearchPanel?
+    private let pluginPaths = PluginPaths.applicationSupport
+    private lazy var pluginRegistry = PluginRegistry(paths: pluginPaths)
+    private lazy var pluginPermissionStore = PluginPermissionStore(paths: pluginPaths)
+    private lazy var pluginLogStore = PluginLogStore(paths: pluginPaths)
     private var hotkeyManager: HotkeyManager?
     private var textExpander: TextExpander?
     private var trayManager: TrayManager?
@@ -44,8 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Sparkle auto-update (only in .app bundle)
         setupSparkle()
 
+        // Load the one shared plugin service graph before creating the panel.
+        try? pluginRegistry.load()
+        try? pluginRegistry.refreshDevelopmentPlugins()
+
         // Set up search panel
-        searchPanel = SearchPanel()
+        searchPanel = SearchPanel(viewModel: SearchViewModel(pluginRegistry: pluginRegistry, pluginPermissionStore: pluginPermissionStore, pluginLogStore: pluginLogStore, pluginPaths: pluginPaths))
         searchPanel?.viewModel.onSnippetsChanged = { [weak self] in
             self?.textExpander?.reloadSnippets()
         }
@@ -132,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let settingsView = SettingsView(hotkeyManager: hotkeyManager)
+        let settingsView = SettingsView(hotkeyManager: hotkeyManager, pluginRegistry: pluginRegistry, pluginPermissionStore: pluginPermissionStore, pluginLogStore: pluginLogStore)
         let hostingView = NSHostingView(rootView: settingsView)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 620, height: 460),

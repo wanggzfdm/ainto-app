@@ -23,10 +23,20 @@ struct MainView: View {
                    let featureCode = viewModel.activePluginFeatureCode {
                     PluginHostView(
                         entryURL: plugin.rootURL.appendingPathComponent(plugin.manifest.main),
+                        pluginRootURL: plugin.rootURL,
                         session: PluginHostSession(pluginID: plugin.id, featureCode: featureCode, query: viewModel.query),
-                        onExit: { viewModel.goBack() }
+                        onExit: { viewModel.goBack() },
+                        onResize: { size in viewModel.onPluginResize?(size) ?? size },
+                        permissionStore: viewModel.pluginPermissionStore,
+                        networkDomains: plugin.manifest.ainto?.networkDomains ?? [],
+                        paths: viewModel.pluginPaths,
+                        logStore: viewModel.pluginLogStore
                     )
                 }
+            case .pluginCenter:
+                PluginCenterView(model: PluginCenterModel(registry: viewModel.pluginRegistry, permissionStore: viewModel.pluginPermissionStore, logStore: viewModel.pluginLogStore))
+                    .padding(20)
+                    .frame(width: 800, height: 520, alignment: .topLeading)
             }
         }
         .background {
@@ -91,10 +101,11 @@ struct MainView: View {
                 }
 
                 TextField(
-                    viewModel.searchMode == .claude
-                        ? L("search.claudePlaceholder")
-                        : "搜索应用和指令/粘贴文件或图片",
-                    text: $viewModel.query
+                    viewModel.searchPlaceholder,
+                    text: Binding(
+                        get: { viewModel.query },
+                        set: { viewModel.updateQuery($0) }
+                    )
                 )
                     .textFieldStyle(.plain)
                     .font(.system(size: 18, weight: .regular))
@@ -103,7 +114,15 @@ struct MainView: View {
                     }
 
                 Spacer()
-
+                if viewModel.hasClipboardJSON && viewModel.searchMode == .apps {
+                    Label(L("search.clipboardJSONStatus"), systemImage: "doc.on.clipboard")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.tint)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(.tint.opacity(0.14), in: Capsule())
+                        .accessibilityLabel(L("search.clipboardJSONStatus"))
+                }
                 // Mode indicator — hidden when AI is disabled
                 if viewModel.aiEnabled {
                     HStack(spacing: 4) {
@@ -205,9 +224,6 @@ struct MainView: View {
             }
         }
         .frame(width: 800)
-        .onChange(of: viewModel.query) { _, newValue in
-            viewModel.performSearch(query: newValue)
-        }
         .onChange(of: viewModel.shouldSelectAll) { _, shouldSelect in
             if shouldSelect {
                 viewModel.focusFilterField(then: {

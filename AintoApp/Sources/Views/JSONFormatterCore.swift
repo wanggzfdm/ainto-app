@@ -79,6 +79,20 @@ public enum JSONFormatterCore {
     }
     public static func format(_ text: String) throws -> String { try serialize(try parse(text), options: [.prettyPrinted, .withoutEscapingSlashes, .fragmentsAllowed]) }
     public static func compact(_ text: String) throws -> String { try serialize(try parse(text), options: [.withoutEscapingSlashes, .fragmentsAllowed]) }
+    /// Decodes one JSON string layer only when its contents form a JSON document.
+    public static func decodeJSONDocumentStringOnce(_ text: String) -> String? {
+        guard let decoded = try? parse(text) as? String, isValidJSON(decoded) else { return nil }
+        return decoded
+    }
+    public static func escapedCompact(_ text: String) throws -> String {
+        let compactJSON = try compact(text)
+        let encodedArray = String(decoding: try JSONSerialization.data(withJSONObject: [compactJSON]), as: UTF8.self)
+        return String(encodedArray.dropFirst().dropLast())
+    }
+    public static func setExpansion(of node: JSONTreeNode, expanded: Bool) {
+        node.isExpanded = expanded
+        node.children.forEach { setExpansion(of: $0, expanded: expanded) }
+    }
     private static func serialize(_ value: Any, options: JSONSerialization.WritingOptions) throws -> String { String(decoding: try JSONSerialization.data(withJSONObject: value, options: options), as: UTF8.self) }
     public static func syntaxTokens(_ text: String) -> [JSONSyntaxToken] {
         var result: [JSONSyntaxToken] = [], i = text.startIndex

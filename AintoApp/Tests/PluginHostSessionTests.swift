@@ -9,4 +9,13 @@ final class PluginHostSessionTests: XCTestCase {
         XCTAssertTrue(session.exit())
         XCTAssertFalse(session.exit())
     }
+
+    func testSizeLifecycleSavesClampedPluginSizeAndRestoresOriginalSize() {
+        var lifecycle = PluginPanelSizeLifecycle()
+        let original = PluginHostSize(width: 800, height: 500)
+        XCTAssertEqual(lifecycle.enter(pluginFrom: original), original)
+        XCTAssertEqual(lifecycle.resize(width: 20, height: 2_000), PluginHostSize(width: 360, height: 720))
+        XCTAssertEqual(lifecycle.exit(), original)
+        XCTAssertNil(lifecycle.exit())
+    }
 }
