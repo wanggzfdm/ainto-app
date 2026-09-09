@@ -78,7 +78,7 @@ struct SnippetView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(height: 300)
+                .frame(height: FilterResultsLayout.snippetContentHeight)
             } else {
                 HStack(spacing: 0) {
                     // Left: snippet list
@@ -121,7 +121,7 @@ struct SnippetView: View {
                     )
                     .frame(maxWidth: .infinity)
                 }
-                .frame(height: 360)
+                .frame(height: FilterResultsLayout.snippetContentHeight)
                 }
             }
 

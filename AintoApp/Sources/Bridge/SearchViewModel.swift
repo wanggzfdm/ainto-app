@@ -148,6 +148,9 @@ struct SearchResult: Identifiable {
     let action: () -> Void
     var actions: [ActionItem] = [] // Cmd+K to show
 
+    /// Stable across search passes, so SwiftUI preserves unchanged result rows.
+    var stableID: String { "\(subtitle)\u{0}\(title)" }
+
     /// Resolved icon: app icon or SF Symbol fallback
     var displayIcon: NSImage {
         if let icon { return icon }

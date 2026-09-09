@@ -149,12 +149,11 @@ final class SearchPanel: NSPanel {
     }
 
     private var mainPanelState: MainPanelContentState {
-        if viewModel.isJSONFormatterExpanded { return .jsonFormatter }
-        let itemCount = viewModel.displayedApplicationResults.count
-        if itemCount == 0 { return .searchOnly }
-        return viewModel.query.isEmpty
-            ? .collapsedApplications
-            : .searchResults
+        MainPanelLayout.contentState(
+            isJSONFormatterExpanded: viewModel.isJSONFormatterExpanded,
+            queryIsEmpty: viewModel.query.isEmpty,
+            itemCount: viewModel.displayedApplicationResults.count
+        )
     }
 
     private var mainPanelItemCount: Int {

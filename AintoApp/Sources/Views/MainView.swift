@@ -68,8 +68,7 @@ struct MainView: View {
     }
 
     private var gridViewportHeight: CGFloat {
-        if viewModel.isApplicationGridExpanded { return 420 }
-        return viewModel.displayedApplicationResults.count > MainSearchGridMetrics.columnCount ? 154 : 82
+        viewModel.isApplicationGridExpanded ? 420 : 154
     }
 
     private var mainSearchView: some View {
@@ -145,10 +144,8 @@ struct MainView: View {
                 viewModel.focusFilterField()
             }
 
-            // Results grid (hidden in Claude mode)
-            if !viewModel.isJSONFormatterExpanded,
-               !viewModel.displayedApplicationResults.isEmpty,
-               viewModel.searchMode == .apps {
+            // Keep the result container mounted while a query produces zero or more matches.
+            if !viewModel.isJSONFormatterExpanded, viewModel.searchMode == .apps {
                 HStack {
                     Text(viewModel.query.isEmpty ? "最近使用" : "搜索结果")
                         .font(.system(size: 12, weight: .medium))
@@ -174,49 +171,55 @@ struct MainView: View {
                 .padding(.bottom, 5)
 
                 ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: viewModel.isApplicationGridExpanded || !viewModel.query.isEmpty) {
-                        LazyVGrid(
-                            columns: Array(
-                                repeating: GridItem(.flexible(), spacing: 8),
-                                count: MainSearchGridMetrics.columnCount
-                            ),
-                            spacing: 8
-                        ) {
-                            ForEach(Array(viewModel.displayedApplicationResults.enumerated()), id: \.element.id) { index, result in
-                                ResultGridItem(
-                                    result: result,
-                                    isSelected: index == viewModel.selectedIndex
-                                )
-                                .id(result.id)
-                                .onTapGesture(count: 2) {
-                                    viewModel.selectedIndex = index
-                                    result.action()
-                                }
-                                .onTapGesture(count: 1) {
-                                    viewModel.selectedIndex = index
-                                }
-                                .contextMenu {
-                                    ForEach(result.actions) { action in
-                                        Button(action: {
-                                            action.action()
-                                        }) {
-                                            Label(action.title, systemImage: action.icon)
+                    ScrollView(.vertical, showsIndicators: viewModel.isApplicationGridExpanded) {
+                        if viewModel.displayedApplicationResults.isEmpty {
+                            Text(L("search.noResults"))
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: gridViewportHeight, alignment: .top)
+                                .padding(.top, 24)
+                        } else {
+                            LazyVGrid(
+                                columns: Array(
+                                    repeating: GridItem(.flexible(), spacing: 8),
+                                    count: MainSearchGridMetrics.columnCount
+                                ),
+                                spacing: 8
+                            ) {
+                                ForEach(Array(viewModel.displayedApplicationResults.enumerated()), id: \.element.stableID) { index, result in
+                                    ResultGridItem(
+                                        result: result,
+                                        isSelected: index == viewModel.selectedIndex
+                                    )
+                                    .id(result.stableID)
+                                    .onTapGesture(count: 2) {
+                                        viewModel.selectedIndex = index
+                                        result.action()
+                                    }
+                                    .onTapGesture(count: 1) {
+                                        viewModel.selectedIndex = index
+                                    }
+                                    .contextMenu {
+                                        ForEach(result.actions) { action in
+                                            Button(action: {
+                                                action.action()
+                                            }) {
+                                                Label(action.title, systemImage: action.icon)
+                                            }
                                         }
                                     }
                                 }
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 10)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 10)
                     }
-                    .frame(
-                        height: gridViewportHeight
-                    )
+                    .frame(height: gridViewportHeight)
                     .onChange(of: viewModel.selectedIndex) { _, newIndex in
                         let displayedResults = viewModel.displayedApplicationResults
                         if displayedResults.indices.contains(newIndex) {
                             withAnimation(.easeOut(duration: 0.12)) {
-                                proxy.scrollTo(displayedResults[newIndex].id, anchor: .center)
+                                proxy.scrollTo(displayedResults[newIndex].stableID, anchor: .center)
                             }
                         }
                     }

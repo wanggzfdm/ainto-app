@@ -9,17 +9,19 @@ enum MainPanelContentState {
 }
 
 enum MainPanelLayout {
+    static func contentState(
+        isJSONFormatterExpanded: Bool,
+        queryIsEmpty: Bool,
+        itemCount: Int
+    ) -> MainPanelContentState {
+        if isJSONFormatterExpanded { return .jsonFormatter }
+        if !queryIsEmpty { return .searchResults }
+        if itemCount == 0 { return .searchOnly }
+        return .collapsedApplications
+    }
     static func size(for state: MainPanelContentState, itemCount: Int? = nil) -> CGSize {
-        if let itemCount, state == .collapsedApplications {
-            return CGSize(width: 800, height: itemCount <= 7 ? 170 : 240)
-        }
-        if let itemCount, state == .searchResults {
-            return CGSize(width: 800, height: itemCount <= 7 ? 170 : 240)
-        }
         switch state {
-        case .searchOnly, .searchResults:
-            return CGSize(width: 800, height: 92)
-        case .collapsedApplications:
+        case .searchOnly, .searchResults, .collapsedApplications:
             return CGSize(width: 800, height: 240)
         case .expandedApplications:
             return CGSize(width: 800, height: 520)
