@@ -6,7 +6,7 @@ Thanks for your interest in contributing!
 
 See the [README](README.md). Quick loop: `./build.sh` then `make run`.
 Use `make app` to build the `.app` bundle when testing bundle-only features
-(Sparkle updates, Launch at Login, menubar icon).
+(Launch at Login and the menubar icon).
 
 ## Pull requests
 

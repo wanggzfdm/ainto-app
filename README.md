@@ -76,7 +76,7 @@ flowchart TD
 - **App discovery.** Apps are enumerated through Launch Services, then ordered by a frecency model (recency × frequency) so your most-used apps surface first.
 - **Input.** A non-activating `NSPanel` that never steals focus from the app you're in. The global hotkey is a registered system hotkey, while inline snippet expansion is driven by a `CGEvent` tap that watches your keystrokes in any app.
 - **Local-first.** Everything lives under `~/.config/ainto/` — TOML for config, snippets, AI commands, and rankings. No telemetry.
-- **Updates.** Builds are signed, notarized, and delivered over [Sparkle](https://sparkle-project.org/).
+- **Distribution.** Builds are signed and notarized before release.
 
 ## Build
 

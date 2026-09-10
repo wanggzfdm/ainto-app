@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import AintoCore
 import ServiceManagement
-import Sparkle
 
 /// Settings — clean sidebar + card-based content.
 struct SettingsView: View {
@@ -392,9 +391,6 @@ struct SettingsView: View {
             HStack(spacing: 12) {
                 AboutButton(title: "ainto.app", icon: "globe") {
                     NSWorkspace.shared.open(URL(string: "https://ainto.app")!)
-                }
-                AboutButton(title: L("settings.checkUpdates"), icon: "arrow.triangle.2.circlepath") {
-                    (NSApp.delegate as? AppDelegate)?.updater?.checkForUpdates()
                 }
             }
 

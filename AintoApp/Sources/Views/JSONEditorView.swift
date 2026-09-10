@@ -85,16 +85,20 @@ private final class LineNumberRulerView: NSRulerView {
         guard let textView, let layout = textView.layoutManager, let container = textView.textContainer else { return }
         let visible = textView.enclosingScrollView?.contentView.bounds ?? rect
         let glyphRange = layout.glyphRange(forBoundingRect: visible, in: container)
-        let characterRange = layout.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        let characterIndex = String.Index(utf16Offset: min(characterRange.location, textView.string.utf16.count), in: textView.string)
-        let startLine = textView.string[..<characterIndex].filter { $0 == "\n" }.count + 1
-        var line = startLine
-        layout.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, _, _ in
-            let y = usedRect.minY + textView.textContainerInset.height
+        layout.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, lineGlyphRange, _ in
+            let lineCharacterRange = layout.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
+            let line = JSONFormatterLineNumberLayout.lineNumber(
+                in: textView.string,
+                atUTF16Offset: lineCharacterRange.location
+            )
+            let documentY = usedRect.minY + textView.textContainerInset.height
+            let y = JSONFormatterLineNumberLayout.rulerY(
+                documentY: documentY,
+                convertedDocumentOriginY: visible.origin.y
+            )
             let baseline = y + (usedRect.height - self.numberFont.ascender + self.numberFont.descender) / 2
             let label = NSAttributedString(string: JSONEditorViewHelpers.lineNumberLabel(line), attributes: [.font: self.numberFont, .foregroundColor: NSColor.secondaryLabelColor])
             label.draw(at: NSPoint(x: self.bounds.width - label.size().width - 8, y: baseline))
-            line += 1
         }
     }
 }
@@ -108,7 +112,8 @@ private struct SyntaxJSONTextView: NSViewRepresentable {
         let ruler = LineNumberRulerView(scrollView: scroll, orientation: .verticalRuler); ruler.ruleThickness = 42; scroll.verticalRulerView = ruler
         let editor = NSTextView(); editor.delegate = context.coordinator; editor.isRichText = true; editor.allowsUndo = true; editor.isAutomaticQuoteSubstitutionEnabled = false
         editor.font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular); editor.backgroundColor = .clear; editor.drawsBackground = false
-        editor.isVerticallyResizable = true; editor.isHorizontallyResizable = false; editor.autoresizingMask = [.width]; editor.textContainer?.widthTracksTextView = true
+        editor.isVerticallyResizable = true; editor.isHorizontallyResizable = true; editor.autoresizingMask = [.height]; editor.textContainer?.widthTracksTextView = false
+        editor.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         scroll.documentView = editor; context.coordinator.editor = editor
         (scroll.verticalRulerView as? LineNumberRulerView)?.textView = editor
         context.coordinator.update(text); context.coordinator.invalidateRuler()
@@ -173,26 +178,60 @@ public struct JSONFormatterView: View {
     @ObservedObject private var localization = LocalizationManager.shared
     @Binding private var text: String
     private let onDetach: (() -> Void)?
+    private let onEmbed: (() -> Void)?
     private let onClose: (() -> Void)?
     @State private var filter = ""
     @State private var message: String?
-    public init(text: Binding<String>, onDetach: (() -> Void)? = nil, onClose: (() -> Void)? = nil) {
+    public init(
+        text: Binding<String>,
+        onDetach: (() -> Void)? = nil,
+        onEmbed: (() -> Void)? = nil,
+        onClose: (() -> Void)? = nil,
+        showTopActions: Bool = true
+    ) {
         _text = text
         self.onDetach = onDetach
+        self.onEmbed = onEmbed
         self.onClose = onClose
+        self.showTopActions = showTopActions
     }
+    private let showTopActions: Bool
     public var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "curlybraces")
                 Text(L("json.title")).font(.headline)
                 Spacer()
-                Button(L("json.format")) { run { try JSONFormatterCore.format(text) } }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                Button(L("json.minify")) { run { try JSONFormatterCore.compact(text) } }
-                    .controlSize(.small)
-                Menu {
+                if let onDetach {
+                    Button(action: onDetach) { Image(systemName: "arrow.up.right.and.arrow.down.left") }
+                        .buttonStyle(.plain)
+                        .help(L("json.openWindow"))
+                }
+                if let onEmbed {
+                    Button(action: onEmbed) { Image(systemName: "arrow.down.left.and.arrow.up.right") }
+                        .buttonStyle(.plain)
+                        .help(L("json.openWindow"))
+                }
+                if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain).help(L("json.close")) }
+            }
+            .padding(12)
+            Divider()
+            JSONEditorView(text: $text)
+            Divider()
+            HStack {
+                Text(L("json.filter")).foregroundStyle(.secondary)
+                TextField(".items.map(x => x.val)[0]", text: $filter)
+                Button(L("json.apply")) { applyFilter() }
+            }
+            .padding(10)
+            if let message { Text(message).foregroundStyle(.red).font(.caption).padding(.bottom, 8) }
+            if JSONFormatterWorkspaceStyle.usesBottomActionBar {
+                Divider()
+                HStack(spacing: 8) {
+                    Button(L("json.format")) { run { try JSONFormatterCore.format(text) } }
+                        .buttonStyle(.borderedProminent)
+                    Button(L("json.minify")) { run { try JSONFormatterCore.compact(text) } }
+                    Divider().frame(height: 18)
                     Button(L("json.copy")) { copy(text) }
                     Button(L("json.compactCopy")) {
                         run {
@@ -208,26 +247,12 @@ public struct JSONFormatterView: View {
                             return text
                         }
                     }
+                    Spacer()
                     Button(L("json.clear"), role: .destructive) { text = ""; message = nil }
-                    if let onDetach { Button(L("json.openWindow"), action: onDetach) }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
                 }
-                .menuStyle(.borderlessButton)
-                .frame(width: 28)
-                if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.plain).help(L("json.close")) }
+                .controlSize(.small)
+                .padding(12)
             }
-            .padding(12)
-            Divider()
-            JSONEditorView(text: $text)
-            Divider()
-            HStack {
-                Text(L("json.filter")).foregroundStyle(.secondary)
-                TextField(".items.map(x => x.val)[0]", text: $filter)
-                Button(L("json.apply")) { applyFilter() }
-            }
-            .padding(10)
-            if let message { Text(message).foregroundStyle(.red).font(.caption).padding(.bottom, 8) }
         }
         .frame(maxWidth: .infinity)
     }

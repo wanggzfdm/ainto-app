@@ -35,14 +35,5 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 
-    <!-- Sparkle Auto-Update Configuration -->
-    <key>SUFeedURL</key>
-    <string>https://ainto-labs.github.io/ainto-app/appcast.xml</string>
-    <key>SUPublicEDKey</key>
-    <string>hGY64zEADqzKPYn0iss1rBVN3ab+85LjxWrWsDr5pIY=</string>
-    <key>SUEnableAutomaticChecks</key>
-    <true/>
-    <key>SUScheduledCheckInterval</key>
-    <integer>86400</integer>
 </dict>
 </plist>

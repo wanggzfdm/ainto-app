@@ -33,10 +33,9 @@ packages:
   HotKey:
     url: https://github.com/soffes/HotKey
     from: "0.2.1"
-  Sparkle:
-    url: https://github.com/sparkle-project/Sparkle
-    from: "2.0.0"
-
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: "0.9.20"
 targets:
   AintoApp:
     type: application
@@ -55,8 +54,7 @@ targets:
           - "Info.plist"
     dependencies:
       - package: HotKey
-      - package: Sparkle
-        product: Sparkle
+      - package: ZIPFoundation
       - sdk: CoreFoundation.framework
       - sdk: CoreServices.framework
       - sdk: AppKit.framework

@@ -8,7 +8,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/soffes/HotKey", from: "0.2.1"),
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.0.0"),
         .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.20")
     ],
     targets: [
@@ -23,7 +22,6 @@ let package = Package(
             dependencies: [
                 "AintoCore",
                 .product(name: "HotKey", package: "HotKey"),
-                .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             path: "Sources",

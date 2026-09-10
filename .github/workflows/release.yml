@@ -83,30 +83,6 @@ jobs:
             OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime" \
             build
 
-      - name: Re-sign Sparkle framework
-        run: |
-          APP_PATH="$BUILD_PATH/$APP_NAME.app"
-          SPARKLE_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" \
-            "$SPARKLE_PATH/Versions/B/XPCServices/Downloader.xpc"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" \
-            "$SPARKLE_PATH/Versions/B/XPCServices/Installer.xpc"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" \
-            "$SPARKLE_PATH/Versions/B/Autoupdate"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" \
-            "$SPARKLE_PATH/Versions/B/Updater.app"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" \
-            "$SPARKLE_PATH"
-          codesign --force --options runtime --timestamp \
-            --sign "Developer ID Application" \
-            --entitlements AintoApp/Resources/Ainto.entitlements \
-            "$APP_PATH"
-
       - name: Notarize
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -137,32 +113,6 @@ jobs:
             "$APP_NAME.dmg" \
             "$BUILD_PATH/$APP_NAME.app"
 
-      - name: Sign DMG for Sparkle
-        id: sparkle_sign
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-        run: |
-          # Download Sparkle tools (pinned version + checksum)
-          SPARKLE_VERSION="2.6.4"
-          SPARKLE_SHA256="50612a06038abc931f16011d7903b8326a362c1074dabccb718404ce8e585f0b"
-          curl -sL -o /tmp/Sparkle.tar.xz "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
-          echo "${SPARKLE_SHA256}  /tmp/Sparkle.tar.xz" | shasum -a 256 --check
-          mkdir -p /tmp/sparkle
-          tar -xf /tmp/Sparkle.tar.xz -C /tmp/sparkle
-
-          # Write key to secure temp file
-          SPARKLE_KEY_FILE=$(mktemp)
-          chmod 600 "$SPARKLE_KEY_FILE"
-          trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
-          echo "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
-
-          SIGN_OUTPUT=$(/tmp/sparkle/bin/sign_update "$APP_NAME.dmg" --ed-key-file "$SPARKLE_KEY_FILE")
-          rm -f "$SPARKLE_KEY_FILE"
-          SIGNATURE=$(echo "$SIGN_OUTPUT" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
-          echo "signature=$SIGNATURE" >> $GITHUB_OUTPUT
-          DMG_SIZE=$(stat -f%z "$APP_NAME.dmg")
-          echo "dmg_size=$DMG_SIZE" >> $GITHUB_OUTPUT
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
@@ -176,17 +126,6 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Deploy appcast.xml to GitHub Pages
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-          SIGNATURE: ${{ steps.sparkle_sign.outputs.signature }}
-          DMG_SIZE: ${{ steps.sparkle_sign.outputs.dmg_size }}
-          MACOS_MIN_VERSION: ${{ env.MACOS_MIN_VERSION }}
-          REPO_URL: https://github.com/${{ github.repository }}
-          APPCAST_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/appcast.xml
-        run: ./Scripts/ci/deploy-appcast.sh
 
       - name: Cleanup
         if: always()

@@ -1,6 +1,25 @@
 import XCTest
 @testable import AintoApp
 
+final class JSONFormatterLineNumberLayoutTests: XCTestCase {
+    func testRulerPositionUsesViewCoordinateConversion() {
+        XCTAssertEqual(
+            JSONFormatterLineNumberLayout.rulerY(
+                documentY: 540,
+                convertedDocumentOriginY: 480
+            ),
+            60
+        )
+    }
+    func testLineNumberIsBasedOnlyOnActualNewlines() {
+        let text = "{\"long\":\"this line must not create extra line numbers when it overflows horizontally\"}\n{\"next\":true}"
+        XCTAssertEqual(JSONFormatterLineNumberLayout.lineNumber(in: text, atUTF16Offset: 0), 1)
+        XCTAssertEqual(JSONFormatterLineNumberLayout.lineNumber(in: text, atUTF16Offset: 20), 1)
+        XCTAssertEqual(JSONFormatterLineNumberLayout.lineNumber(in: text, atUTF16Offset: 76), 1)
+        XCTAssertEqual(JSONFormatterLineNumberLayout.lineNumber(in: text, atUTF16Offset: text.utf16.count - 1), 2)
+    }
+}
+
 final class JSONFormatterCoreTests: XCTestCase {
     func testPrettyObject() throws { XCTAssertEqual(try JSONFormatterCore.format("{\"b\":2,\"a\":1}"), "{\n  \"b\" : 2,\n  \"a\" : 1\n}") }
     func testCompactPreservesStringWhitespaceAndPunctuation() throws { let input = "{\"s\":\" a,}\"}"; XCTAssertEqual(try JSONFormatterCore.compact(input), input) }

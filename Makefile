@@ -81,7 +81,7 @@ help:
 	@echo "Usage:"
 	@echo "  make build    - Build Rust core + Swift app (SPM, fast)"
 	@echo "  make run      - Kill, build, and run"
-	@echo "  make app      - Build .app bundle (Xcode, for testing Sparkle/icon/login)"
+	@echo "  make app      - Build .app bundle (Xcode, for testing icon/login)"
 	@echo "  make generate - Generate Xcode project from project.yml"
 	@echo "  make kill     - Kill running instance"
 	@echo "  make clean    - Remove build directories"
