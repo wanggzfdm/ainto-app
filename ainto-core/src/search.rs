@@ -5,6 +5,7 @@
 pub struct AppEntry {
     pub display_name: String,
     pub search_name: String,       // lowercase, for matching
+    pub aliases: Vec<String>,      // localized names, for matching
     pub path: String,              // app bundle path
     pub bundle_id: Option<String>, // CFBundleIdentifier, for dedup
     pub icon_png: Option<Vec<u8>>, // PNG bytes for icon
@@ -37,7 +38,13 @@ impl AppIndex {
             .apps
             .iter()
             .filter_map(|app| {
-                let score = fuzzy_score(&query_lc, &app.search_name, &app.display_name);
+                let score = std::iter::once((&app.search_name, &app.display_name))
+                    .chain(app.aliases.iter().map(|alias| (alias, alias)))
+                    .map(|(search_name, display_name)| {
+                        fuzzy_score(&query_lc, &search_name.to_lowercase(), display_name)
+                    })
+                    .max()
+                    .unwrap_or_default();
                 if score > 0 {
                     // Combine match score with ranking (ranking adds a small boost)
                     Some((app, score + app.ranking.min(50)))
@@ -91,7 +98,10 @@ impl AppIndex {
     }
 
     /// Apply frecency rankings loaded from disk.
-    pub fn apply_rankings(&mut self, rankings: &std::collections::HashMap<String, crate::ranking::RankingEntry>) {
+    pub fn apply_rankings(
+        &mut self,
+        rankings: &std::collections::HashMap<String, crate::ranking::RankingEntry>,
+    ) {
         for app in &mut self.apps {
             if let Some(entry) = rankings.get(&app.path) {
                 app.ranking = entry.frecency_score();
@@ -189,7 +199,10 @@ fn word_boundary_match(query: &str, display_name: &str) -> bool {
     }
 
     // Check if query is a subsequence of the initials
-    let initials_lower: Vec<char> = initials.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    let initials_lower: Vec<char> = initials
+        .iter()
+        .map(|c| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
     let mut qi = 0;
     for &ic in &initials_lower {
         if qi < query_chars.len() && ic == query_chars[qi] {
@@ -213,7 +226,10 @@ fn extract_word_boundaries(name: &str) -> Vec<char> {
         } else if c.is_uppercase() && i > 0 && chars[i - 1].is_lowercase() {
             // camelCase boundary: "OrbStack" → S
             boundaries.push(c);
-        } else if i > 0 && (chars[i - 1] == ' ' || chars[i - 1] == '-' || chars[i - 1] == '_') && c.is_alphanumeric() {
+        } else if i > 0
+            && (chars[i - 1] == ' ' || chars[i - 1] == '-' || chars[i - 1] == '_')
+            && c.is_alphanumeric()
+        {
             // Word boundary after separator
             boundaries.push(c);
         }
@@ -224,7 +240,10 @@ fn extract_word_boundaries(name: &str) -> Vec<char> {
 /// CamelCase aware subsequence: query chars match at case-change boundaries.
 fn camel_case_match(query: &str, display_name: &str) -> bool {
     let boundaries = extract_word_boundaries(display_name);
-    let boundary_str: String = boundaries.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    let boundary_str: String = boundaries
+        .iter()
+        .map(|c| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
     let query_lc = query.to_lowercase();
     is_subsequence(&query_lc, &boundary_str)
 }
@@ -254,12 +273,25 @@ mod tests {
         AppEntry {
             display_name: display_name.to_string(),
             search_name: search_name.to_string(),
+            aliases: Vec::new(),
             path: format!("/Applications/{display_name}.app"),
             bundle_id: None,
             icon_png: None,
             ranking: 0,
             is_favourite: false,
         }
+    }
+
+    #[test]
+    fn searches_localized_application_aliases() {
+        let mut netease = app("neteasemusic", "NetEaseMusic");
+        netease.aliases = vec!["网易云音乐".to_string()];
+
+        let index = AppIndex::new(vec![netease]);
+        let results = index.search("网易云音乐");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].display_name, "NetEaseMusic");
     }
 
     #[test]

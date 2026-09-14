@@ -317,6 +317,11 @@ final class SearchViewModel: ObservableObject {
         onOpenJSONFormatterWindow?()
     }
 
+    func reopenJSONFormatterInline() {
+        isJSONFormatterExpanded = true
+        onJSONFormatterExpansionChanged?(true)
+    }
+
     func didOpenJSONFormatterWindow() {
         shouldOpenJSONFormatterWindow = false
     }

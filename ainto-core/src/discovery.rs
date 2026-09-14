@@ -10,7 +10,7 @@ use core::{
     ptr::{self, NonNull},
 };
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -19,7 +19,7 @@ use objc2::Message;
 use objc2::rc::Retained;
 use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage, NSImageRep, NSWorkspace};
 use objc2_foundation::{
-    NSBundle, NSData, NSDictionary, NSNumber, NSSize, NSString, NSURL, ns_string,
+    NSBundle, NSData, NSDictionary, NSNumber, NSObject, NSSize, NSString, NSURL, ns_string,
 };
 
 use crate::search::AppEntry;
@@ -175,6 +175,41 @@ fn is_helper_location(path: &Path) -> bool {
         || s.starts_with("/Library/Application Support/")
 }
 
+/// Collect display-name aliases from every localized InfoPlist.strings in an app bundle.
+fn localized_name_aliases(path: &Path) -> Vec<String> {
+    let resources_dir = path.join("Contents/Resources");
+    let Ok(entries) = fs::read_dir(resources_dir) else {
+        return Vec::new();
+    };
+
+    let mut aliases = std::collections::HashSet::new();
+    for entry in entries.flatten() {
+        let localized_file = entry.path().join("InfoPlist.strings");
+        if !entry.file_name().to_string_lossy().ends_with(".lproj") || !localized_file.is_file() {
+            continue;
+        }
+        let Some(dictionary): Option<Retained<NSDictionary<NSString, NSObject>>> = (unsafe {
+            NSDictionary::dictionaryWithContentsOfFile(&NSString::from_str(
+                &localized_file.to_string_lossy(),
+            ))
+        }) else {
+            continue;
+        };
+        for key in [
+            ns_string!("CFBundleDisplayName"),
+            ns_string!("CFBundleName"),
+        ] {
+            if let Some(value) = dictionary
+                .objectForKey(key)
+                .and_then(|value| value.downcast::<NSString>().ok())
+            {
+                aliases.insert(value.to_string());
+            }
+        }
+    }
+    aliases.into_iter().collect()
+}
+
 /// Extract app metadata from a bundle path.
 fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
     if is_nested_inside_another_app(path) || is_helper_location(path) {
@@ -208,10 +243,10 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
     let is_truthy = |key: &NSString| -> bool {
         info.objectForKey(key)
             .map(|v| {
-                v.downcast_ref::<NSNumber>()
-                    .is_some_and(|n| n.boolValue())
-                    || v.downcast_ref::<NSString>()
-                        .is_some_and(|s| s.to_string() == "1" || s.to_string().eq_ignore_ascii_case("YES"))
+                v.downcast_ref::<NSNumber>().is_some_and(|n| n.boolValue())
+                    || v.downcast_ref::<NSString>().is_some_and(|s| {
+                        s.to_string() == "1" || s.to_string().eq_ignore_ascii_case("YES")
+                    })
             })
             .unwrap_or(false)
     };
@@ -241,11 +276,9 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
         .or_else(|| get_localized_string(ns_string!("CFBundleName")))
         .or_else(|| get_string(ns_string!("CFBundleDisplayName")))
         .or_else(|| get_string(ns_string!("CFBundleName")))
-        .or_else(|| {
-            path.file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-        })?;
+        .or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()))?;
 
+    let aliases = localized_name_aliases(path);
     let icon_png = if store_icons {
         icon_of_path(path.to_str().unwrap_or(""))
     } else {
@@ -257,6 +290,7 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
     Some(AppEntry {
         display_name: name.clone(),
         search_name: name.to_lowercase(),
+        aliases,
         path: path.to_string_lossy().into_owned(),
         bundle_id,
         icon_png,
@@ -267,7 +301,7 @@ fn query_app(path: &Path, store_icons: bool) -> Option<AppEntry> {
 
 /// Get all installed applications.
 pub fn get_installed_apps(store_icons: bool) -> Vec<AppEntry> {
-        let paths = registered_app_urls().unwrap_or_else(|| {
+    let paths = registered_app_urls().unwrap_or_else(|| {
         // Fallback: scan known directories
         let mut paths = Vec::new();
         for dir in USER_APP_DIRS.iter() {
@@ -289,7 +323,13 @@ pub fn get_installed_apps(store_icons: bool) -> Vec<AppEntry> {
         .collect();
 
     // Dedup by bundle_id: prefer /Applications/ path over build directories
-    apps.sort_by_key(|a| if a.path.starts_with("/Applications/") { 0 } else { 1 });
+    apps.sort_by_key(|a| {
+        if a.path.starts_with("/Applications/") {
+            0
+        } else {
+            1
+        }
+    });
     let mut seen_ids = std::collections::HashSet::new();
     apps.retain(|app| {
         match &app.bundle_id {

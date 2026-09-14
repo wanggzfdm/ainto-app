@@ -515,6 +515,7 @@ struct SettingsCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
+            .glassElevation(.card, shape: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

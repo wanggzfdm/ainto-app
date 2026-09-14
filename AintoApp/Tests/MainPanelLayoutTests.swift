@@ -43,6 +43,64 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         ) == .searchOnly
     )
 }
+@Test func mainPanelElevationUsesLargerAndLowerFarShadow() {
+    #expect(GlassElevationStyle.mainPanel.farShadow.radius > GlassElevationStyle.mainPanel.nearShadow.radius)
+    #expect(GlassElevationStyle.mainPanel.farShadow.y > GlassElevationStyle.mainPanel.nearShadow.y)
+}
+
+@Test func elevationShadowUsesNonBlackCoolGrayColor() {
+    let color = GlassElevationStyle.coolGrayShadow
+
+    #expect(color.red > 0)
+    #expect(color.green > 0)
+    #expect(color.blue > 0)
+    #expect(color.blue > color.red)
+    #expect(color.blue > color.green)
+}
+
+@Test func mainPanelUsesNativeWindowShadow() {
+    #expect(MainPanelLayout.shouldUseNativeWindowShadow)
+}
+
+@Test func cardElevationIsMoreSubtleThanMainPanelElevation() {
+    #expect(GlassElevationStyle.card.farShadow.radius < GlassElevationStyle.mainPanel.farShadow.radius)
+    #expect(GlassElevationStyle.card.farShadow.opacity < GlassElevationStyle.mainPanel.farShadow.opacity)
+    #expect(GlassElevationStyle.card.highlightOpacity > 0)
+}
+
+@Test func tunedElevationKeepsCardsSubtleButClearlyVisible() {
+    #expect(GlassElevationStyle.mainPanel.nearShadow.opacity >= 0.22)
+    #expect(GlassElevationStyle.mainPanel.farShadow.opacity >= 0.28)
+    #expect(GlassElevationStyle.mainPanel.farShadow.radius >= 44)
+    #expect(GlassElevationStyle.mainPanel.farShadow.y >= 22)
+    #expect(GlassElevationStyle.card.farShadow.opacity >= 0.14)
+    #expect(GlassElevationStyle.card.farShadow.opacity < GlassElevationStyle.mainPanel.farShadow.opacity)
+    #expect(GlassElevationStyle.card.farShadow.radius < GlassElevationStyle.mainPanel.farShadow.radius)
+    #expect(GlassElevationStyle.card.farShadow.y < GlassElevationStyle.mainPanel.farShadow.y)
+}
+
+@Test func cardElevationIncludesTwoShadowsAndHighlight() {
+    #expect(GlassElevationStyle.card.nearShadow.opacity > 0)
+    #expect(GlassElevationStyle.card.farShadow.opacity > 0)
+    #expect(GlassElevationStyle.card.highlightOpacity > 0)
+}
+
+@Test func JSONFormatterWorkspaceUsesTheSameLayoutInInlineAndDetachedModes() {
+    #expect(JSONFormatterWorkspaceStyle.usesBottomActionBar)
+}
+
+@Test func detachedJSONFormatterUsesNativeResizableWindowStyle() {
+    #expect(JSONFormatterWindowStyle.styleMask.contains(.titled))
+    #expect(JSONFormatterWindowStyle.styleMask.contains(.closable))
+    #expect(JSONFormatterWindowStyle.styleMask.contains(.miniaturizable))
+    #expect(JSONFormatterWindowStyle.styleMask.contains(.resizable))
+    #expect(JSONFormatterWindowStyle.styleMask == [.titled, .closable, .miniaturizable, .resizable])
+    #expect(JSONFormatterWindowStyle.usesNativeWindowShadow)
+}
+
+@Test func JSONFormatterPanelResizeDoesNotAnimate() {
+    #expect(MainPanelLayout.shouldAnimateResize(for: .jsonFormatter) == false)
+}
 
 @Test func expandedApplicationPanelUsesFullGridWidthAndExpandedHeight() {
     let size = MainPanelLayout.size(for: .expandedApplications)

@@ -255,6 +255,9 @@ public struct JSONFormatterView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .glassElevation(.card, shape: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()

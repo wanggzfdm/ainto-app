@@ -87,5 +87,13 @@ final class JSONFormatterCoreTests: XCTestCase {
         XCTAssertEqual(JSONEditorViewHelpers.errorMessage(error), "Line 3, column 8: Unexpected token")
     }
     func testLineNumberLabelUsesActualNumber() { XCTAssertEqual(JSONEditorViewHelpers.lineNumberLabel(12), "12"); XCTAssertNotEqual(JSONEditorViewHelpers.lineNumberLabel(12), "\\(line)") }
+    func testJSONFormatterWindowUsesNativeResizableStyle() {
+        let style = JSONFormatterWindowStyle.styleMask
+        XCTAssertTrue(style.contains(.titled))
+        XCTAssertTrue(style.contains(.closable))
+        XCTAssertTrue(style.contains(.miniaturizable))
+        XCTAssertTrue(style.contains(.resizable))
+        XCTAssertEqual(style, [.titled, .closable, .miniaturizable, .resizable])
+    }
     private func assertLocation(_ text: String, line: Int, column: Int) { do { _ = try JSONFormatterCore.parse(text); XCTFail("expected error") } catch let e as JSONFormatterError { XCTAssertEqual(e.line, line); XCTAssertEqual(e.column, column) } catch { XCTFail("wrong error: \(error)") } }
 }

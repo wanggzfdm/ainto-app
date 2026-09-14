@@ -47,7 +47,7 @@ final class SearchPanel: NSPanel {
         self.isMovableByWindowBackground = true
         self.isOpaque = false
         self.backgroundColor = .clear
-        self.hasShadow = true
+        self.hasShadow = MainPanelLayout.shouldUseNativeWindowShadow
 
         // Round the window content view to match the SwiftUI clipShape,
         // so the window-level shadow follows the rounded corners.
@@ -73,6 +73,7 @@ final class SearchPanel: NSPanel {
 
         viewModel.onOpenJSONFormatterWindow = { [weak self] in
             self?.openJSONFormatterWindow()
+            self?.orderOut(nil)
         }
 
         viewModel.onPluginFeatureSelected = { [weak self] _, _ in
@@ -87,7 +88,8 @@ final class SearchPanel: NSPanel {
 
         viewModel.onJSONFormatterExpansionChanged = { [weak self] expanded in
             DispatchQueue.main.async {
-                self?.resizePanel(for: expanded ? .jsonFormatter : self?.mainPanelState ?? .searchOnly)
+                let state: MainPanelContentState = expanded ? .jsonFormatter : self?.mainPanelState ?? .searchOnly
+                self?.resizePanel(for: state, animate: MainPanelLayout.shouldAnimateResize(for: state))
             }
         }
 
@@ -205,16 +207,29 @@ final class SearchPanel: NSPanel {
             get: { [weak viewModel] in viewModel?.jsonFormatterInput ?? "" },
             set: { [weak viewModel] in viewModel?.jsonFormatterInput = $0 }
         )
-        let rootView = JSONFormatterView(text: text)
+        let rootView = DetachedJSONFormatterView(
+            text: text,
+            onEmbed: { [weak self] in
+                self?.jsonFormatterWindow?.close()
+                self?.viewModel.reopenJSONFormatterInline()
+                self?.presentPanel()
+            },
+            onClose: { [weak self] in
+                self?.jsonFormatterWindow?.close()
+            }
+        )
         let hosting = NSHostingView(rootView: rootView)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: JSONFormatterWindowStyle.styleMask,
             backing: .buffered,
             defer: false
         )
         window.contentView = hosting
-        window.title = L("json.title")
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = JSONFormatterWindowStyle.usesNativeWindowShadow
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 800, height: 600)
         window.center()

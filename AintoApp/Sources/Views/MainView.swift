@@ -63,8 +63,10 @@ struct MainView: View {
                     lineWidth: 0.5
                 )
         }
-        .shadow(color: .black.opacity(0.3), radius: 40, x: 0, y: 20)
-        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
+        .glassElevation(
+            .mainPanel,
+            shape: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
     }
 
     private var gridViewportHeight: CGFloat {
@@ -81,10 +83,8 @@ struct MainView: View {
                     onDetach: { viewModel.requestJSONFormatterWindow() },
                     onClose: { viewModel.collapseJSONFormatter() }
                 )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: viewModel.isJSONFormatterExpanded)
     }
 
     private var mainSearchContent: some View {
