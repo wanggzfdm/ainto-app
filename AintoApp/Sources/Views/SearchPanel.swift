@@ -107,31 +107,23 @@ final class SearchPanel: NSPanel {
             }
         }
 
-        viewModel.onApplicationIndexReady = { [weak self] in
-            DispatchQueue.main.async {
-                guard let self, self.pendingInitialShow else { return }
-                self.pendingInitialShow = false
-                self.presentPanel()
-            }
-        }
-
         viewModel.loadAISettings()
     }
 
     /// Whether the user has ever positioned the panel manually.
     private var hasUserPosition = false
-    private var pendingInitialShow = false
     func showPanel() {
         // Remember the currently focused app before showing.
         previousApp = NSWorkspace.shared.frontmostApplication
         viewModel.loadAISettings()
-        if !viewModel.isApplicationIndexReady, viewModel.query.isEmpty {
-            pendingInitialShow = true
-            viewModel.selectAll()
-            viewModel.refreshApps()
-            return
+        viewModel.selectAll()
+        if !PanelPresentation.shouldDeferPresentationUntilIndexReady() {
+            presentPanel()
         }
-        presentPanel()
+
+        if !viewModel.isApplicationIndexReady, viewModel.query.isEmpty {
+            viewModel.refreshApps()
+        }
     }
 
     private func presentPanel() {

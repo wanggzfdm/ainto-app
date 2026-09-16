@@ -54,3 +54,7 @@ import Testing
 
     #expect(visible == ["Safari", "Xcode"])
 }
+
+@Test func panelPresentationDoesNotWaitForApplicationIndex() {
+    #expect(!PanelPresentation.shouldDeferPresentationUntilIndexReady())
+}

@@ -33,6 +33,12 @@ enum ApplicationGridPresentation {
     }
 }
 
+enum PanelPresentation {
+    static func shouldDeferPresentationUntilIndexReady() -> Bool {
+        false
+    }
+}
+
 enum GridNavigationDirection {
     case left
     case right
