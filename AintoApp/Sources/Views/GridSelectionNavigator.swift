@@ -4,6 +4,34 @@ enum MainSearchGridMetrics {
 }
 
 enum ApplicationGridPresentation {
+    static let expansionDuration: Double = 0.25
+    static let collapsedColumnCount = MainSearchGridMetrics.columnCount
+    static let compactViewportHeight = 154.0
+    static let collapsedViewportHeight = compactViewportHeight
+    static let expandedViewportHeight = 420.0
+    static let rowStaggerDelay: Double = 0.035
+    static let collapsedItemCount = MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount
+    static let expandedColumnCount = 5
+    static let expandedIconSize = 64.0
+    static let expandedItemHeight = 104.0
+    static let expandedGridSpacing = 18.0
+    static let itemEntranceVerticalOffset = 0.0
+
+    static func shouldAnimateItemEntrance(isApplicationGridExpanded: Bool) -> Bool {
+        isApplicationGridExpanded
+    }
+
+    static func shouldAnimateGridContent(isApplicationGridExpanded: Bool) -> Bool {
+        isApplicationGridExpanded
+    }
+
+    static func shouldShowLoadingState(
+        queryIsEmpty: Bool,
+        isApplicationIndexReady: Bool
+    ) -> Bool {
+        queryIsEmpty && !isApplicationIndexReady
+    }
+
     static func visibleItems<Item>(
         from items: [Item],
         isExpanded: Bool,
@@ -11,7 +39,7 @@ enum ApplicationGridPresentation {
     ) -> [Item] {
         guard !isExpanded else { return items }
         guard columnCount > 0 else { return [] }
-        return Array(items.prefix(columnCount * MainSearchGridMetrics.collapsedRowCount))
+        return Array(items.prefix(collapsedItemCount))
     }
 
     static func collapsedItems<Item, ID: Hashable>(

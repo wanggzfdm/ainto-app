@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import AintoApp
 
@@ -14,7 +15,7 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     let size = MainPanelLayout.size(for: .searchResults, itemCount: itemCount)
 
     #expect(size.width == 800)
-    #expect(size.height == 240)
+    #expect(size.height == 506)
 }
 
 @Test func searchOnlyPanelKeepsTheResultsAreaReserved() {
@@ -43,6 +44,29 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         ) == .searchOnly
     )
 }
+
+@Test func emptyQueryWithExpandedGridUsesExpandedApplicationLayout() {
+    #expect(
+        MainPanelLayout.contentState(
+            isJSONFormatterExpanded: false,
+            queryIsEmpty: true,
+            itemCount: 20,
+            isApplicationGridExpanded: true
+        ) == .expandedApplications
+    )
+}
+
+@Test func emptyQueryWithCollapsedGridUsesCollapsedApplicationLayout() {
+    #expect(
+        MainPanelLayout.contentState(
+            isJSONFormatterExpanded: false,
+            queryIsEmpty: true,
+            itemCount: 20,
+            isApplicationGridExpanded: false
+        ) == .collapsedApplications
+    )
+}
+
 @Test func mainPanelElevationUsesLargerAndLowerFarShadow() {
     #expect(GlassElevationStyle.mainPanel.farShadow.radius > GlassElevationStyle.mainPanel.nearShadow.radius)
     #expect(GlassElevationStyle.mainPanel.farShadow.y > GlassElevationStyle.mainPanel.nearShadow.y)
@@ -83,6 +107,30 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(GlassElevationStyle.card.nearShadow.opacity > 0)
     #expect(GlassElevationStyle.card.farShadow.opacity > 0)
     #expect(GlassElevationStyle.card.highlightOpacity > 0)
+    #expect(MainPanelLayout.shouldAnimateResize(for: .jsonFormatter) == false)
+}
+
+@Test func applicationGridAnimatesItsPanelFrameFromTheFixedTopEdge() {
+    #expect(MainPanelLayout.shouldAnimatePanelFrame(for: .collapsedApplications))
+    #expect(MainPanelLayout.shouldAnimatePanelFrame(for: .expandedApplications))
+    #expect(MainPanelLayout.shouldAnimatePanelFrame(for: .searchResults))
+}
+
+@Test func resizingPanelKeepsItsTopEdgeFixed() {
+    let current = CGRect(x: 240, y: 400, width: 800, height: 240)
+    let resized = MainPanelLayout.frame(
+        keepingTopEdgeOf: current,
+        width: 800,
+        height: 520
+    )
+
+    #expect(resized.maxY == current.maxY)
+    #expect(resized.minY == 120)
+    #expect(resized.height == 520)
+}
+
+@Test func panelContentUsesTopAlignmentForSearchFieldAnchoring() {
+    #expect(MainPanelLayout.contentAlignment == .top)
 }
 
 @Test func JSONFormatterWorkspaceUsesTheSameLayoutInInlineAndDetachedModes() {

@@ -144,12 +144,13 @@ struct SearchResult: Identifiable {
     let subtitle: String
     let icon: NSImage?
     let systemIcon: String? // fallback SF Symbol name
+    var stableIdentity: String? = nil
     var score: Int = 0 // higher = better match, used for unified sorting
     let action: () -> Void
     var actions: [ActionItem] = [] // Cmd+K to show
 
     /// Stable across search passes, so SwiftUI preserves unchanged result rows.
-    var stableID: String { "\(subtitle)\u{0}\(title)" }
+    var stableID: String { stableIdentity ?? "\(subtitle)\u{0}\(title)" }
 
     /// Resolved icon: app icon or SF Symbol fallback
     var displayIcon: NSImage {
@@ -289,6 +290,9 @@ final class SearchViewModel: ObservableObject {
     func updateQuery(_ newQuery: String) {
         guard query != newQuery else { return }
         query = newQuery
+        if !newQuery.isEmpty {
+            isApplicationGridExpanded = false
+        }
         performSearch(query: newQuery)
     }
 
@@ -338,25 +342,29 @@ final class SearchViewModel: ObservableObject {
             : "搜索应用和指令/粘贴文件或图片"
     }
 
-    var displayedApplicationResults: [SearchResult] {
-        guard query.isEmpty else { return results }
-        guard isApplicationIndexReady else { return [] }
-        let applications: [SearchResult]
-        if isApplicationGridExpanded {
-            applications = allApplications
-        } else {
-            let recentApplications = results.filter { $0.subtitle == L("search.application") }
-            applications = ApplicationGridPresentation.collapsedItems(
-                recent: recentApplications,
-                all: allApplications,
-                maximumCount: MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount,
-                id: { $0.subtitle + "\u{0}" + $0.title }
-            )
-        }
+    var compactApplicationResults: [SearchResult] {
+        guard query.isEmpty, isApplicationIndexReady else { return [] }
+        let recentApplications = results.filter { $0.subtitle == L("search.application") }
+        var applications = ApplicationGridPresentation.collapsedItems(
+            recent: recentApplications,
+            all: allApplications,
+            maximumCount: ApplicationGridPresentation.collapsedItemCount,
+            id: { $0.stableID }
+        )
         if let clipboardCommand = results.first(where: { $0.title == L("search.openJSON") }) {
-            return [clipboardCommand] + applications
+            applications.insert(clipboardCommand, at: 0)
         }
         return applications
+    }
+
+    var launchpadApplicationResults: [SearchResult] {
+        guard query.isEmpty, isApplicationIndexReady else { return [] }
+        return allApplications
+    }
+
+    var displayedApplicationResults: [SearchResult] {
+        guard query.isEmpty else { return results }
+        return isApplicationGridExpanded ? launchpadApplicationResults : compactApplicationResults
     }
     var expandableApplicationCount: Int {
         allApplications.count
@@ -492,6 +500,19 @@ final class SearchViewModel: ObservableObject {
             return
         }
 
+        // A valid local directory is always the first result.
+        var finderResults: [SearchResult] = []
+        if let finderResult = FinderPathResult.resolve(query) {
+            finderResults.append(SearchResult(
+                title: finderResult.title,
+                subtitle: finderResult.subtitle,
+                icon: nil,
+                systemIcon: "folder.fill"
+            ) {
+                NSWorkspace.shared.open(finderResult.url)
+            })
+        }
+
         // Search apps via Rust FFI
         var appResults: [SearchResult] = []
 
@@ -511,6 +532,7 @@ final class SearchViewModel: ObservableObject {
                         subtitle: L("search.application"),
                         icon: icon,
                         systemIcon: "app.fill",
+                        stableIdentity: path,
                         score: fuzzyScore(query, name) + ranking
                     ) {
                         NSWorkspace.shared.open(URL(fileURLWithPath: path))
@@ -643,7 +665,7 @@ final class SearchViewModel: ObservableObject {
 
         var allResults = appResults + commandResults + snippetResults + pluginResults
         allResults.sort { $0.score > $1.score }
-        results = Array(allResults.prefix(20))
+        results = Array(finderResults + allResults.prefix(19))
         selectedIndex = 0
         onResultsChanged?()
     }
@@ -989,7 +1011,8 @@ final class SearchViewModel: ObservableObject {
                 title: name,
                 subtitle: L("search.application"),
                 icon: icon,
-                systemIcon: "app.fill"
+                systemIcon: "app.fill",
+                stableIdentity: path
             ) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: path))
                 rc_update_ranking(path)

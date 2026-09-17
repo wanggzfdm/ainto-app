@@ -96,7 +96,10 @@ final class SearchPanel: NSPanel {
         viewModel.onApplicationGridExpansionChanged = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.resizePanel(for: self.mainPanelState)
+                self.resizePanel(
+                    for: self.mainPanelState,
+                    animate: MainPanelLayout.shouldAnimatePanelFrame(for: self.mainPanelState)
+                )
             }
         }
 
@@ -146,7 +149,8 @@ final class SearchPanel: NSPanel {
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: viewModel.isJSONFormatterExpanded,
             queryIsEmpty: viewModel.query.isEmpty,
-            itemCount: viewModel.displayedApplicationResults.count
+            itemCount: viewModel.displayedApplicationResults.count,
+            isApplicationGridExpanded: viewModel.isApplicationGridExpanded
         )
     }
 
@@ -181,10 +185,18 @@ final class SearchPanel: NSPanel {
         let desiredSize = MainPanelLayout.size(for: state, itemCount: mainPanelItemCount)
         let width = min(desiredSize.width, availableFrame.width - 24)
         let height = min(desiredSize.height, availableFrame.height - 24)
-        let top = min(frame.maxY, availableFrame.maxY - 12)
+        let anchoredFrame = MainPanelLayout.frame(
+            keepingTopEdgeOf: frame,
+            width: width,
+            height: height
+        )
         let x = min(max(frame.origin.x, availableFrame.minX + 12), availableFrame.maxX - width - 12)
-        let y = max(availableFrame.minY + 12, top - height)
-        setFrame(NSRect(x: x, y: y, width: width, height: height), display: true, animate: animate)
+        let y = max(availableFrame.minY + 12, anchoredFrame.origin.y)
+        setFrame(
+            NSRect(x: x, y: y, width: width, height: height),
+            display: true,
+            animate: animate
+        )
     }
 
     private func openJSONFormatterWindow() {

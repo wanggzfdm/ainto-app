@@ -22,6 +22,19 @@ final class SearchViewModelSelectionTests: XCTestCase {
         XCTAssertTrue(viewModel.shouldSelectAll)
     }
 
+    func testValidDirectoryQueryProducesFinderResultFirst() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let viewModel = SearchViewModel()
+        viewModel.updateQuery(directory.path)
+
+        XCTAssertEqual(viewModel.results.first?.subtitle, "在访达中打开")
+        XCTAssertEqual(viewModel.results.first?.title, directory.lastPathComponent)
+        XCTAssertEqual(viewModel.selectedIndex, 0)
+    }
+
     func testApplyingApplicationRefreshPopulatesDefaultGrid() {
         let viewModel = SearchViewModel()
         let app = SearchResult(

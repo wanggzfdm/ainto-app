@@ -26,4 +26,23 @@ final class SearchResultIdentityTests: XCTestCase {
 
         XCTAssertNotEqual(application.stableID, command.stableID)
     }
+
+    func testApplicationsWithTheSameDisplayNameUseTheirPathsAsDistinctStableIdentities() {
+        let first = SearchResult(
+            title: "Google Chrome",
+            subtitle: L("search.application"),
+            icon: nil,
+            systemIcon: "app.fill",
+            stableIdentity: "/Applications/Google Chrome.app"
+        ) {}
+        let second = SearchResult(
+            title: "Google Chrome",
+            subtitle: L("search.application"),
+            icon: nil,
+            systemIcon: "app.fill",
+            stableIdentity: "/Applications/Google Chrome Beta.app"
+        ) {}
+
+        XCTAssertNotEqual(first.stableID, second.stableID)
+    }
 }

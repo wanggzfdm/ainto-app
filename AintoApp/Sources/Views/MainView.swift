@@ -39,6 +39,7 @@ struct MainView: View {
                     .frame(width: 800, height: 520, alignment: .topLeading)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: MainPanelLayout.contentAlignment)
         .background {
             ZStack {
                 VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
@@ -53,25 +54,17 @@ struct MainView: View {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.3),
-                            Color.white.opacity(0.1),
-                            Color.white.opacity(0.05),
-                        ],
-                        startPoint: .top, endPoint: .bottom
+                        colors: [Color.white.opacity(0.3), Color.white.opacity(0.1), Color.white.opacity(0.05)],
+                        startPoint: .top,
+                        endPoint: .bottom
                     ),
                     lineWidth: 0.5
                 )
         }
-        .glassElevation(
-            .mainPanel,
-            shape: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
+        .glassElevation(.mainPanel, shape: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var gridViewportHeight: CGFloat {
-        viewModel.isApplicationGridExpanded ? 420 : 154
-    }
+    private var searchResultViewportHeight: CGFloat { 420 }
 
     private var mainSearchView: some View {
         VStack(spacing: 0) {
@@ -84,181 +77,254 @@ struct MainView: View {
                     onClose: { viewModel.collapseJSONFormatter() }
                 )
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: MainPanelLayout.contentAlignment)
     }
 
     private var mainSearchContent: some View {
         VStack(spacing: 0) {
-            // Search input
-            HStack(spacing: 14) {
-                if viewModel.searchMode == .claude {
-                    ClaudeIcon(size: 22)
-                } else {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.tertiary)
-                        .font(.system(size: 20, weight: .medium))
-                }
+            searchHeader
 
-                TextField(
-                    viewModel.searchPlaceholder,
-                    text: Binding(
-                        get: { viewModel.query },
-                        set: { viewModel.updateQuery($0) }
-                    )
-                )
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 18, weight: .regular))
-                    .onSubmit {
-                        viewModel.openSelected()
-                    }
-
-                Spacer()
-                if viewModel.hasClipboardJSON && viewModel.searchMode == .apps {
-                    Label(L("search.clipboardJSONStatus"), systemImage: "doc.on.clipboard")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.tint)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(.tint.opacity(0.14), in: Capsule())
-                        .accessibilityLabel(L("search.clipboardJSONStatus"))
-                }
-                // Mode indicator — hidden when AI is disabled
-                if viewModel.aiEnabled {
-                    HStack(spacing: 4) {
-                        Text(viewModel.searchMode == .claude ? L("search.modeSearch") : L("search.modeAI"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                        Text("Tab")
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.primary.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
-            .onAppear {
-                viewModel.focusFilterField()
-            }
-
-            // Keep the result container mounted while a query produces zero or more matches.
             if !viewModel.isJSONFormatterExpanded, viewModel.searchMode == .apps {
-                HStack {
-                    Text(viewModel.query.isEmpty ? "最近使用" : "搜索结果")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if viewModel.query.isEmpty, viewModel.expandableApplicationCount > 0 {
-                        Button {
-                            viewModel.setApplicationGridExpanded(!viewModel.isApplicationGridExpanded)
-                        } label: {
-                            Text(
-                                viewModel.isApplicationGridExpanded
-                                    ? "收起"
-                                    : "展开（\(viewModel.expandableApplicationCount)）"
-                            )
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                resultHeader
+                if viewModel.query.isEmpty {
+                    applicationGrids
+                } else {
+                    searchResultPage
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 5)
+            }
+        }
+        .frame(width: 800, alignment: .top)
+    }
+    private var searchHeader: some View {
+        HStack(spacing: 14) {
+            if viewModel.searchMode == .claude {
+                ClaudeIcon(size: 22)
+            } else {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 20, weight: .medium))
+            }
 
-                ScrollViewReader { proxy in
-                    ScrollView(.vertical, showsIndicators: viewModel.isApplicationGridExpanded) {
-                        if viewModel.displayedApplicationResults.isEmpty {
-                            Text(L("search.noResults"))
-                                .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, minHeight: gridViewportHeight, alignment: .top)
-                                .padding(.top, 24)
-                        } else {
-                            LazyVGrid(
-                                columns: Array(
-                                    repeating: GridItem(.flexible(), spacing: 8),
-                                    count: MainSearchGridMetrics.columnCount
-                                ),
-                                spacing: 8
-                            ) {
-                                ForEach(Array(viewModel.displayedApplicationResults.enumerated()), id: \.element.stableID) { index, result in
-                                    ResultGridItem(
-                                        result: result,
-                                        isSelected: index == viewModel.selectedIndex
-                                    )
-                                    .id(result.stableID)
-                                    .onTapGesture(count: 2) {
-                                        viewModel.selectedIndex = index
-                                        result.action()
-                                    }
-                                    .onTapGesture(count: 1) {
-                                        viewModel.selectedIndex = index
-                                    }
-                                    .contextMenu {
-                                        ForEach(result.actions) { action in
-                                            Button(action: {
-                                                action.action()
-                                            }) {
-                                                Label(action.title, systemImage: action.icon)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 10)
-                        }
-                    }
-                    .frame(height: gridViewportHeight)
-                    .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                        let displayedResults = viewModel.displayedApplicationResults
-                        if displayedResults.indices.contains(newIndex) {
-                            withAnimation(.easeOut(duration: 0.12)) {
-                                proxy.scrollTo(displayedResults[newIndex].stableID, anchor: .center)
-                            }
-                        }
+            TextField(
+                viewModel.searchPlaceholder,
+                text: Binding(
+                    get: { viewModel.query },
+                    set: { viewModel.updateQuery($0) }
+                )
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 18, weight: .regular))
+            .onSubmit { viewModel.openSelected() }
+
+            Spacer()
+            if viewModel.hasClipboardJSON && viewModel.searchMode == .apps {
+                Label(L("search.clipboardJSONStatus"), systemImage: "doc.on.clipboard")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.tint)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.tint.opacity(0.14), in: Capsule())
+                    .accessibilityLabel(L("search.clipboardJSONStatus"))
+            }
+            if viewModel.aiEnabled {
+                HStack(spacing: 4) {
+                    Text(viewModel.searchMode == .claude ? L("search.modeSearch") : L("search.modeAI"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                    Text("Tab")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .onAppear { viewModel.focusFilterField() }
+    }
+
+    private var resultHeader: some View {
+        HStack {
+            Text(viewModel.query.isEmpty ? "最近使用" : "搜索结果")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            Spacer()
+            if viewModel.query.isEmpty, viewModel.expandableApplicationCount > 0 {
+                Button {
+                    viewModel.setApplicationGridExpanded(!viewModel.isApplicationGridExpanded)
+                } label: {
+                    Text(viewModel.isApplicationGridExpanded ? "收起" : "展开（\(viewModel.expandableApplicationCount)）")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 5)
+    }
+
+    private var applicationGrids: some View {
+        VStack(spacing: 0) {
+            Group {
+                if viewModel.isApplicationGridExpanded {
+                    launchpadPage
+                } else {
+                    compactApplicationsGrid
+                }
+            }
+            .frame(
+                height: viewModel.isApplicationGridExpanded
+                    ? ApplicationGridPresentation.expandedViewportHeight
+                    : ApplicationGridPresentation.compactViewportHeight,
+                alignment: .top
+            )
+            .clipped()
+            .animation(.easeInOut(duration: ApplicationGridPresentation.expansionDuration), value: viewModel.isApplicationGridExpanded)
+        }
+    }
+    private var compactApplicationsGrid: some View {
+        applicationGrid(
+            results: viewModel.compactApplicationResults,
+            columnCount: ApplicationGridPresentation.collapsedColumnCount,
+            spacing: 8,
+            iconSize: 40,
+            itemHeight: 68,
+            titleFontSize: 11
+        )
+        .frame(height: ApplicationGridPresentation.collapsedViewportHeight, alignment: .top)
+        .clipped()
+    }
+
+    private var launchpadPage: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            applicationGrid(
+                results: viewModel.launchpadApplicationResults,
+                columnCount: ApplicationGridPresentation.expandedColumnCount,
+                spacing: ApplicationGridPresentation.expandedGridSpacing,
+                iconSize: ApplicationGridPresentation.expandedIconSize,
+                itemHeight: ApplicationGridPresentation.expandedItemHeight,
+                titleFontSize: 12
+            )
+            .padding(.top, 8)
+        }
+    }
+
+    private var searchResultPage: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                applicationGrid(
+                    results: viewModel.results,
+                    columnCount: MainSearchGridMetrics.columnCount,
+                    spacing: 8,
+                    iconSize: 40,
+                    itemHeight: 68,
+                    titleFontSize: 11
+                )
+            }
+            .frame(height: searchResultViewportHeight)
+            .clipped()
+            .onChange(of: viewModel.selectedIndex) { _, newIndex in
+                if viewModel.results.indices.contains(newIndex) {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        proxy.scrollTo(viewModel.results[newIndex].stableID, anchor: .center)
                     }
                 }
             }
         }
-        .frame(width: 800)
-        .onChange(of: viewModel.shouldSelectAll) { _, shouldSelect in
-            if shouldSelect {
-                viewModel.focusFilterField(then: {
-                    NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
-                })
-                viewModel.shouldSelectAll = false
+    }
+
+    @ViewBuilder
+    private func applicationGrid(
+        results: [SearchResult],
+        columnCount: Int,
+        spacing: CGFloat,
+        iconSize: CGFloat,
+        itemHeight: CGFloat,
+        titleFontSize: CGFloat
+    ) -> some View {
+        if results.isEmpty {
+            if ApplicationGridPresentation.shouldShowLoadingState(
+                queryIsEmpty: viewModel.query.isEmpty,
+                isApplicationIndexReady: viewModel.isApplicationIndexReady
+            ) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, minHeight: ApplicationGridPresentation.collapsedViewportHeight, alignment: .top)
+                    .padding(.top, 24)
+            } else {
+                Text(L("search.noResults"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: ApplicationGridPresentation.collapsedViewportHeight, alignment: .top)
+                    .padding(.top, 24)
             }
+        } else {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: spacing), count: columnCount),
+                spacing: spacing
+            ) {
+                ForEach(Array(results.enumerated()), id: \.element.stableID) { index, result in
+                    ResultGridItem(
+                        result: result,
+                        isSelected: index == viewModel.selectedIndex,
+                        iconSize: iconSize,
+                        itemHeight: itemHeight,
+                        titleFontSize: titleFontSize
+                    )
+                    .id(result.stableID)
+                    .onTapGesture(count: 2) {
+                        viewModel.selectedIndex = index
+                        result.action()
+                    }
+                    .onTapGesture(count: 1) {
+                        viewModel.selectedIndex = index
+                    }
+                    .contextMenu {
+                        ForEach(result.actions) { action in
+                            Button(action: action.action) {
+                                Label(action.title, systemImage: action.icon)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
         }
     }
 }
 
-/// A single result in the uTools-style application grid.
+/// A single result in the application grid.
 struct ResultGridItem: View {
     let result: SearchResult
     let isSelected: Bool
+    let iconSize: CGFloat
+    let itemHeight: CGFloat
+    let titleFontSize: CGFloat
 
     var body: some View {
         VStack(spacing: 5) {
             Image(nsImage: result.displayIcon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 40, height: 40)
+                .frame(width: iconSize, height: iconSize)
 
             Text(result.title)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .font(.system(size: titleFontSize, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 68)
+        .frame(height: itemHeight)
         .padding(.horizontal, 3)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -296,7 +362,7 @@ struct KeyHint: View {
     }
 }
 
-/// NSVisualEffectView wrapper for SwiftUI — real macOS vibrancy blur.
+/// NSVisualEffectView wrapper for real macOS vibrancy blur.
 struct VisualEffectBackground: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
@@ -306,24 +372,11 @@ struct VisualEffectBackground: NSViewRepresentable {
         view.material = material
         view.blendingMode = blendingMode
         view.state = .active
-        view.isEmphasized = true
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.material = material
         nsView.blendingMode = blendingMode
-    }
-}
-
-/// Claude Code icon using SF Symbol (no Anthropic logo — trademark restriction).
-struct ClaudeIcon: View {
-    let size: CGFloat
-
-    var body: some View {
-        Image(systemName: "sparkle")
-            .font(.system(size: size * 0.7))
-            .foregroundStyle(.secondary)
-            .frame(width: size, height: size)
     }
 }
