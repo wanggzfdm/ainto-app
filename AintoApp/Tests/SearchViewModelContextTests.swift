@@ -74,6 +74,35 @@ final class SearchViewModelContextTests: XCTestCase {
         XCTAssertTrue(viewModel.results.contains { $0.title == L("json.title") })
     }
 
+    func testPlainClipboardTextSearchesWithoutFillingQuery() {
+        let viewModel = SearchViewModel()
+        viewModel.updateClipboardContext("json formatter")
+
+        XCTAssertTrue(viewModel.hasClipboardText)
+        XCTAssertEqual(viewModel.clipboardText, "json formatter")
+        XCTAssertEqual(viewModel.query, "")
+        XCTAssertFalse(viewModel.results.isEmpty)
+    }
+
+    func testActivatingClipboardTextMovesFullTextIntoQuery() {
+        let viewModel = SearchViewModel()
+        viewModel.updateClipboardContext("terminal")
+
+        viewModel.useClipboardTextAsQuery()
+
+        XCTAssertEqual(viewModel.query, "terminal")
+        XCTAssertFalse(viewModel.hasClipboardText)
+    }
+
+    func testWhitespaceClipboardClearsTextAndJSONContexts() {
+        let viewModel = SearchViewModel()
+        viewModel.updateClipboardContext("terminal")
+        viewModel.updateClipboardContext("  \n ")
+
+        XCTAssertFalse(viewModel.hasClipboardText)
+        XCTAssertFalse(viewModel.hasClipboardJSON)
+    }
+
     func testNonJSONClipboardDoesNotAddContextCommand() {
         let viewModel = SearchViewModel()
 

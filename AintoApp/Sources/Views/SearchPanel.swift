@@ -120,6 +120,7 @@ final class SearchPanel: NSPanel {
         previousApp = NSWorkspace.shared.frontmostApplication
         viewModel.loadAISettings()
         viewModel.selectAll()
+        viewModel.updateClipboardContext(NSPasteboard.general.string(forType: .string))
         if !PanelPresentation.shouldDeferPresentationUntilIndexReady() {
             presentPanel()
         }
@@ -133,14 +134,12 @@ final class SearchPanel: NSPanel {
         let screen = screenUnderMouse()
         if let screen {
             let frameSize = MainPanelLayout.size(for: mainPanelState, itemCount: mainPanelItemCount)
-            let visibleFrame = screen.visibleFrame
-            let width = min(frameSize.width, visibleFrame.width - 24)
-            let height = min(frameSize.height, visibleFrame.height - 24)
-            let x = visibleFrame.midX - width / 2
-            let y = visibleFrame.maxY - visibleFrame.height * 0.25 - height / 2
-            setFrame(NSRect(x: x, y: max(visibleFrame.minY + 12, y), width: width, height: height), display: true, animate: false)
+            let panelFrame = MainPanelLayout.centeredFrame(
+                in: screen.visibleFrame,
+                requestedSize: frameSize
+            )
+            setFrame(panelFrame, display: true, animate: false)
         }
-        viewModel.updateClipboardContext(NSPasteboard.general.string(forType: .string))
         makeKeyAndOrderFront(nil)
         viewModel.selectAll()
     }
@@ -149,6 +148,8 @@ final class SearchPanel: NSPanel {
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: viewModel.isJSONFormatterExpanded,
             queryIsEmpty: viewModel.query.isEmpty,
+            hasClipboardJSON: viewModel.hasClipboardJSON,
+            hasClipboardText: viewModel.hasClipboardText,
             itemCount: viewModel.displayedApplicationResults.count,
             isApplicationGridExpanded: viewModel.isApplicationGridExpanded
         )
@@ -183,20 +184,11 @@ final class SearchPanel: NSPanel {
         let screen = screenUnderMouse()
         let availableFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 800)
         let desiredSize = MainPanelLayout.size(for: state, itemCount: mainPanelItemCount)
-        let width = min(desiredSize.width, availableFrame.width - 24)
-        let height = min(desiredSize.height, availableFrame.height - 24)
-        let anchoredFrame = MainPanelLayout.frame(
-            keepingTopEdgeOf: frame,
-            width: width,
-            height: height
+        let panelFrame = MainPanelLayout.centeredFrame(
+            in: availableFrame,
+            requestedSize: desiredSize
         )
-        let x = min(max(frame.origin.x, availableFrame.minX + 12), availableFrame.maxX - width - 12)
-        let y = max(availableFrame.minY + 12, anchoredFrame.origin.y)
-        setFrame(
-            NSRect(x: x, y: y, width: width, height: height),
-            display: true,
-            animate: animate
-        )
+        setFrame(panelFrame, display: true, animate: animate)
     }
 
     private func openJSONFormatterWindow() {

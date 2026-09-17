@@ -86,7 +86,9 @@ struct MainView: View {
         VStack(spacing: 0) {
             searchHeader
 
-            if !viewModel.isJSONFormatterExpanded, viewModel.searchMode == .apps {
+            if !viewModel.isJSONFormatterExpanded,
+               viewModel.searchMode == .apps,
+               !(viewModel.query.isEmpty && !viewModel.hasClipboardJSON && !viewModel.hasClipboardText) {
                 resultHeader
                 if viewModel.query.isEmpty {
                     applicationGrids
@@ -97,26 +99,63 @@ struct MainView: View {
         }
         .frame(width: 800, alignment: .top)
     }
+
+    private func clipboardTextChip(_ text: String) -> some View {
+        Button {
+            viewModel.useClipboardTextAsQuery()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.tint.opacity(0.8))
+                Text(text)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: 200, minHeight: 36, maxHeight: 36)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.primary.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(text)
+    }
+
     private var searchHeader: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             if viewModel.searchMode == .claude {
                 ClaudeIcon(size: 22)
-            } else {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.tertiary)
-                    .font(.system(size: 20, weight: .medium))
             }
 
-            TextField(
-                viewModel.searchPlaceholder,
-                text: Binding(
-                    get: { viewModel.query },
-                    set: { viewModel.updateQuery($0) }
+            if viewModel.query.isEmpty, let clipboardText = viewModel.clipboardText, viewModel.searchMode == .apps {
+                clipboardTextChip(clipboardText)
+            }
+
+            ZStack(alignment: .leading) {
+                if viewModel.query.isEmpty, !viewModel.hasClipboardText {
+                    Text(viewModel.searchPlaceholder)
+                        .font(.system(size: 25, weight: .light))
+                        .foregroundStyle(.secondary)
+                        .allowsHitTesting(false)
+                }
+
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { viewModel.query },
+                        set: { viewModel.updateQuery($0) }
+                    )
                 )
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 18, weight: .regular))
-            .onSubmit { viewModel.openSelected() }
+                .textFieldStyle(.plain)
+                .font(.system(size: 25, weight: .regular))
+                .frame(height: 48)
+                .onSubmit { viewModel.openSelected() }
+            }
 
             Spacer()
             if viewModel.hasClipboardJSON && viewModel.searchMode == .apps {
@@ -129,7 +168,8 @@ struct MainView: View {
                     .accessibilityLabel(L("search.clipboardJSONStatus"))
             }
             if viewModel.aiEnabled {
-                HStack(spacing: 4) {
+                HStack(spacing: 4)
+                {
                     Text(viewModel.searchMode == .claude ? L("search.modeSearch") : L("search.modeAI"))
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
@@ -143,8 +183,9 @@ struct MainView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(height: 58)
         .onAppear { viewModel.focusFilterField() }
     }
 

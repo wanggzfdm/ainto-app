@@ -7,7 +7,7 @@ func collapsedApplicationPanelKeepsStableTwoRowHeight(itemCount: Int) {
     let size = MainPanelLayout.size(for: .collapsedApplications, itemCount: itemCount)
 
     #expect(size.width == 800)
-    #expect(size.height == 240)
+    #expect(size.height == 600)
 }
 
 @Test(arguments: [0, 1, 7, 8, 20])
@@ -15,14 +15,63 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     let size = MainPanelLayout.size(for: .searchResults, itemCount: itemCount)
 
     #expect(size.width == 800)
-    #expect(size.height == 506)
+    #expect(size.height == 600)
 }
 
 @Test func searchOnlyPanelKeepsTheResultsAreaReserved() {
     let size = MainPanelLayout.size(for: .searchOnly)
 
     #expect(size.width == 800)
-    #expect(size.height == 240)
+    #expect(size.height == 600)
+}
+
+@Test func emptyQueryWithoutClipboardJSONUsesInputOnlyLayout() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: true,
+        hasClipboardJSON: false,
+        itemCount: 8
+    )
+
+    #expect(state == .inputOnly)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 58))
+}
+
+@Test func emptyQueryWithClipboardTextUsesExpandedSearchResultsLayout() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: true,
+        hasClipboardJSON: false,
+        hasClipboardText: true,
+        itemCount: 1
+    )
+
+    #expect(state == .searchResults)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
+}
+
+@Test func emptyQueryWithClipboardJSONKeepsExpandedMainPanel() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: true,
+        hasClipboardJSON: true,
+        itemCount: 8
+    )
+
+    #expect(state == .collapsedApplications)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
+}
+
+@Test func nonEmptyQueryUsesSearchResultsInsteadOfInputOnly() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: false,
+        hasClipboardJSON: false,
+        itemCount: 0
+    )
+
+    #expect(state == .searchResults)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
 }
 
 @Test func noMatchQueryUsesSearchResultsLayout() {
@@ -40,6 +89,7 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: false,
             queryIsEmpty: true,
+            hasClipboardJSON: true,
             itemCount: 0
         ) == .searchOnly
     )
@@ -50,6 +100,7 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: false,
             queryIsEmpty: true,
+            hasClipboardJSON: true,
             itemCount: 20,
             isApplicationGridExpanded: true
         ) == .expandedApplications
@@ -61,6 +112,7 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: false,
             queryIsEmpty: true,
+            hasClipboardJSON: true,
             itemCount: 20,
             isApplicationGridExpanded: false
         ) == .collapsedApplications
@@ -110,23 +162,36 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(MainPanelLayout.shouldAnimateResize(for: .jsonFormatter) == false)
 }
 
-@Test func applicationGridAnimatesItsPanelFrameFromTheFixedTopEdge() {
-    #expect(MainPanelLayout.shouldAnimatePanelFrame(for: .collapsedApplications))
-    #expect(MainPanelLayout.shouldAnimatePanelFrame(for: .expandedApplications))
-    #expect(MainPanelLayout.shouldAnimatePanelFrame(for: .searchResults))
-}
-
-@Test func resizingPanelKeepsItsTopEdgeFixed() {
-    let current = CGRect(x: 240, y: 400, width: 800, height: 240)
-    let resized = MainPanelLayout.frame(
-        keepingTopEdgeOf: current,
-        width: 800,
-        height: 520
+@Test func panelFrameCentersRequestedSizeInVisibleFrame() {
+    let visibleFrame = CGRect(x: 100, y: 50, width: 1440, height: 860)
+    let frame = MainPanelLayout.centeredFrame(
+        in: visibleFrame,
+        requestedSize: CGSize(width: 800, height: 240)
     )
 
-    #expect(resized.maxY == current.maxY)
-    #expect(resized.minY == 120)
-    #expect(resized.height == 520)
+    #expect(frame.midX == visibleFrame.midX)
+    #expect(frame.midY == visibleFrame.midY)
+    #expect(frame.size == CGSize(width: 800, height: 240))
+}
+
+@Test func panelFrameStaysCenteredWhenContentHeightChanges() {
+    let visibleFrame = CGRect(x: 0, y: 24, width: 1440, height: 876)
+    let shortFrame = MainPanelLayout.centeredFrame(in: visibleFrame, requestedSize: CGSize(width: 800, height: 240))
+    let tallFrame = MainPanelLayout.centeredFrame(in: visibleFrame, requestedSize: CGSize(width: 800, height: 520))
+
+    #expect(shortFrame.midX == visibleFrame.midX)
+    #expect(shortFrame.midY == visibleFrame.midY)
+    #expect(tallFrame.midX == visibleFrame.midX)
+    #expect(tallFrame.midY == visibleFrame.midY)
+}
+
+@Test func panelFrameClampsOversizedDimensionsInsideTwelvePointMargins() {
+    let visibleFrame = CGRect(x: 0, y: 24, width: 500, height: 400)
+    let frame = MainPanelLayout.centeredFrame(in: visibleFrame, requestedSize: CGSize(width: 800, height: 590))
+
+    #expect(frame.size == CGSize(width: 476, height: 376))
+    #expect(frame.minX == visibleFrame.minX + 12)
+    #expect(frame.minY == visibleFrame.minY + 12)
 }
 
 @Test func panelContentUsesTopAlignmentForSearchFieldAnchoring() {
@@ -149,10 +214,13 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
 @Test func JSONFormatterPanelResizeDoesNotAnimate() {
     #expect(MainPanelLayout.shouldAnimateResize(for: .jsonFormatter) == false)
 }
+@Test func jsonFormatterPanelUsesTheSameFixedHeightAsOtherMainPanelStates() {
+    #expect(MainPanelLayout.size(for: .jsonFormatter).height == 600)
+}
 
 @Test func expandedApplicationPanelUsesFullGridWidthAndExpandedHeight() {
     let size = MainPanelLayout.size(for: .expandedApplications)
 
     #expect(size.width == 800)
-    #expect(size.height == 520)
+    #expect(size.height == 600)
 }

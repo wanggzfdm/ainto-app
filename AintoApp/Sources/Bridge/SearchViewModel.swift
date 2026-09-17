@@ -192,6 +192,7 @@ final class SearchViewModel: ObservableObject {
     @Published var isJSONFormatterExpanded = false
     @Published var shouldOpenJSONFormatterWindow = false
     private var clipboardJSON: String?
+    var clipboardText: String?
     let pluginRegistry: PluginRegistry
     let pluginPermissionStore: PluginPermissionStore
     let pluginLogStore: PluginLogStore
@@ -275,20 +276,47 @@ final class SearchViewModel: ObservableObject {
 
     func updateClipboardContext(_ text: String?) {
         let original = text ?? ""
+        guard !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            clipboardText = nil
+            clipboardJSON = nil
+            if page == .main && query.isEmpty {
+                results = buildDefaultResults()
+                selectedIndex = 0
+                onResultsChanged?()
+            }
+            return
+        }
+
         clipboardJSON = JSONFormatterCore.decodeJSONDocumentStringOnce(original)
             ?? (JSONFormatterCore.isValidJSON(original) ? original : nil)
         if clipboardJSON != nil {
+            clipboardText = nil
             query = ""
-        }
-        if page == .main && query.isEmpty {
             results = buildDefaultResults()
-            selectedIndex = 0
+        } else {
+            clipboardJSON = nil
+            clipboardText = original
+            query = ""
+            performSearch(query: original)
         }
+        selectedIndex = 0
+    }
+
+    var hasClipboardText: Bool { clipboardText != nil }
+
+    func useClipboardTextAsQuery() {
+        guard let text = clipboardText else { return }
+        clipboardText = nil
+        updateQuery(text)
     }
 
     /// Update the query and its results in the same input event, avoiding a deferred view update.
     func updateQuery(_ newQuery: String) {
         guard query != newQuery else { return }
+        if !newQuery.isEmpty {
+            clipboardText = nil
+            clipboardJSON = nil
+        }
         query = newQuery
         if !newQuery.isEmpty {
             isApplicationGridExpanded = false
@@ -364,6 +392,7 @@ final class SearchViewModel: ObservableObject {
 
     var displayedApplicationResults: [SearchResult] {
         guard query.isEmpty else { return results }
+        if hasClipboardText || hasClipboardJSON { return results }
         return isApplicationGridExpanded ? launchpadApplicationResults : compactApplicationResults
     }
     var expandableApplicationCount: Int {
@@ -417,7 +446,13 @@ final class SearchViewModel: ObservableObject {
         recentApplications: [SearchResult]
     ) {
         self.allApplications = allApplications
-        results = recentApplications
+        if query.isEmpty, let clipboardText {
+            performSearch(query: clipboardText)
+        } else if query.isEmpty, hasClipboardJSON {
+            results = buildDefaultResults()
+        } else {
+            results = recentApplications
+        }
         selectedIndex = 0
         isApplicationIndexReady = true
         onApplicationIndexReady?()
@@ -974,6 +1009,16 @@ final class SearchViewModel: ObservableObject {
 
     /// Build recent applications shown when the search query is empty.
     private func buildDefaultResults() -> [SearchResult] {
+        if let clipboardJSON {
+            return [SearchResult(
+                title: L("search.openJSON"),
+                subtitle: L("search.detectedJSON"),
+                icon: nil,
+                systemIcon: "curlybraces"
+            ) { [weak self] in
+                self?.openJSONFormatter(with: clipboardJSON, format: true)
+            }]
+        }
         guard let cStr = rc_get_top_apps(
             UInt64(MainSearchGridMetrics.columnCount * MainSearchGridMetrics.collapsedRowCount)
         ) else { return [] }
