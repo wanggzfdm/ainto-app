@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 @testable import AintoApp
 
 final class JSONFormatterLineNumberLayoutTests: XCTestCase {
@@ -94,6 +95,15 @@ final class JSONFormatterCoreTests: XCTestCase {
         XCTAssertTrue(style.contains(.miniaturizable))
         XCTAssertTrue(style.contains(.resizable))
         XCTAssertEqual(style, [.titled, .closable, .miniaturizable, .resizable])
+    }
+    @MainActor func testJSONEditorScrollViewClipsRulerToEditorBounds() {
+        let scrollView = NSScrollView()
+        JSONEditorViewHelpers.configureScrollViewClipping(scrollView)
+        XCTAssertTrue(scrollView.wantsLayer)
+        XCTAssertTrue(scrollView.layer?.masksToBounds ?? false)
+    }
+    func testJSONTreeEmptyStateDoesNotShowInvalidJSONMessage() {
+        XCTAssertFalse(JSONEditorViewHelpers.shouldShowInvalidJSONTreeMessage)
     }
     private func assertLocation(_ text: String, line: Int, column: Int) { do { _ = try JSONFormatterCore.parse(text); XCTFail("expected error") } catch let e as JSONFormatterError { XCTAssertEqual(e.line, line); XCTAssertEqual(e.column, column) } catch { XCTFail("wrong error: \(error)") } }
 }

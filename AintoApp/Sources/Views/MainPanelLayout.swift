@@ -29,6 +29,7 @@ enum MainPanelLayout {
         if queryIsEmpty && isApplicationGridExpanded { return .expandedApplications }
         if queryIsEmpty && !hasClipboardJSON && !hasClipboardText { return .inputOnly }
         if queryIsEmpty && hasClipboardText { return .compactSearchResults }
+        if queryIsEmpty && hasClipboardJSON { return .compactSearchResults }
         if itemCount == 0 { return .searchOnly }
         return isApplicationGridExpanded ? .expandedApplications : .collapsedApplications
     }

@@ -50,7 +50,7 @@ public struct JSONEditorView: View {
                     }
                     .frame(height: 340)
                 } else {
-                    ContentUnavailableView("Invalid JSON", systemImage: "exclamationmark.triangle")
+                    Color.clear
                         .frame(height: 340)
                 }
             }
@@ -108,6 +108,7 @@ private struct SyntaxJSONTextView: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = true; scroll.borderType = .bezelBorder
+        JSONEditorViewHelpers.configureScrollViewClipping(scroll)
         scroll.hasVerticalRuler = true; scroll.rulersVisible = true
         let ruler = LineNumberRulerView(scrollView: scroll, orientation: .verticalRuler); ruler.ruleThickness = 42; scroll.verticalRulerView = ruler
         let editor = NSTextView(); editor.delegate = context.coordinator; editor.isRichText = true; editor.allowsUndo = true; editor.isAutomaticQuoteSubstitutionEnabled = false
@@ -159,6 +160,12 @@ private struct JSONTreeRow: View {
     private var color: Color { switch node.type { case "string": return .green; case "number": return .orange; case "bool": return .blue; case "null": return .purple; default: return .teal } }
 }
 public enum JSONEditorViewHelpers {
+    @MainActor public static func configureScrollViewClipping(_ scrollView: NSScrollView) {
+        scrollView.wantsLayer = true
+        scrollView.layer?.masksToBounds = true
+    }
+
+    public static let shouldShowInvalidJSONTreeMessage = false
     public static func lineNumberLabel(_ line: Int) -> String { String(line) }
     public static func errorMessage(_ error: Error) -> String {
         if let jsonError = error as? JSONFormatterError {

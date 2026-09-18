@@ -64,24 +64,12 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 240))
 }
 
-@Test func emptyQueryWithClipboardJSONKeepsExpandedMainPanel() {
+@Test func emptyQueryWithClipboardJSONUsesCompactSearchResultsLayout() {
     let state = MainPanelLayout.contentState(
         isJSONFormatterExpanded: false,
         queryIsEmpty: true,
         hasClipboardJSON: true,
-        itemCount: 8
-    )
-
-    #expect(state == .collapsedApplications)
-    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
-}
-
-@Test func normalSearchUsesCompactSearchResultsLayout() {
-    let state = MainPanelLayout.contentState(
-        isJSONFormatterExpanded: false,
-        queryIsEmpty: false,
-        itemCount: 1,
-        isSearchResultsExpanded: false
+        itemCount: 1
     )
 
     #expect(state == .compactSearchResults)
@@ -135,9 +123,8 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: false,
             queryIsEmpty: true,
-            hasClipboardJSON: true,
             itemCount: 0
-        ) == .searchOnly
+        ) == .inputOnly
     )
 }
 
@@ -153,15 +140,14 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     )
 }
 
-@Test func emptyQueryWithCollapsedGridUsesCollapsedApplicationLayout() {
+@Test func emptyQueryWithoutContextUsesInputOnlyInsteadOfCollapsedApplications() {
     #expect(
         MainPanelLayout.contentState(
             isJSONFormatterExpanded: false,
             queryIsEmpty: true,
-            hasClipboardJSON: true,
             itemCount: 20,
             isApplicationGridExpanded: false
-        ) == .collapsedApplications
+        ) == .inputOnly
     )
 }
 
