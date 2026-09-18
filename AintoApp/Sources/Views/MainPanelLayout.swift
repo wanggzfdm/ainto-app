@@ -28,6 +28,8 @@ enum MainPanelLayout {
     }
     static let shouldUseNativeWindowShadow = true
     static let contentAlignment: Alignment = .top
+    static let searchBarCenterHeightRatio: CGFloat = 1 / 3
+
     static func shouldAnimateResize(for state: MainPanelContentState) -> Bool {
         state != .jsonFormatter
     }
@@ -44,6 +46,26 @@ enum MainPanelLayout {
             y: visibleFrame.midY - height / 2,
             width: width,
             height: height
+        )
+    }
+
+    static func frame(
+        for state: MainPanelContentState,
+        in visibleFrame: CGRect,
+        requestedSize: CGSize,
+        margin: CGFloat = 12
+    ) -> CGRect {
+        let centered = centeredFrame(in: visibleFrame, requestedSize: requestedSize, margin: margin)
+        guard state == .inputOnly else { return centered }
+        let minY = visibleFrame.minY + margin
+        let maxY = visibleFrame.maxY - margin - centered.height
+        let anchoredY = visibleFrame.maxY - visibleFrame.height * searchBarCenterHeightRatio - 29
+        let y = min(max(anchoredY, minY), maxY)
+        return CGRect(
+            x: centered.minX,
+            y: y,
+            width: centered.width,
+            height: centered.height
         )
     }
 

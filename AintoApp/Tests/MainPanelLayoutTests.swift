@@ -162,6 +162,56 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(MainPanelLayout.shouldAnimateResize(for: .jsonFormatter) == false)
 }
 
+@Test func inputOnlyFrameUsesUtoolsUpperCenterAnchor() {
+    let visibleFrame = CGRect(x: 100, y: 50, width: 1440, height: 860)
+    let frame = MainPanelLayout.frame(
+        for: .inputOnly,
+        in: visibleFrame,
+        requestedSize: CGSize(width: 800, height: 58)
+    )
+
+    #expect(frame.midX == visibleFrame.midX)
+    #expect(abs(frame.midY - (visibleFrame.maxY - visibleFrame.height / 3)) < 0.001)
+}
+
+@Test func expandedPanelFrameRemainsFullyCentered() {
+    let visibleFrame = CGRect(x: 0, y: 24, width: 1440, height: 876)
+    let frame = MainPanelLayout.frame(
+        for: .searchResults,
+        in: visibleFrame,
+        requestedSize: CGSize(width: 800, height: 600)
+    )
+
+    #expect(frame.midX == visibleFrame.midX)
+    #expect(frame.midY == visibleFrame.midY)
+}
+
+@Test func inputOnlyFrameClampsUpperAnchorInsideMargins() {
+    let visibleFrame = CGRect(x: 0, y: 0, width: 500, height: 70)
+    let frame = MainPanelLayout.frame(
+        for: .inputOnly,
+        in: visibleFrame,
+        requestedSize: CGSize(width: 800, height: 58)
+    )
+
+    #expect(frame.minY >= visibleFrame.minY + 12)
+    #expect(frame.maxY <= visibleFrame.maxY - 12)
+}
+
+@Test func expandedPanelClampsInsideTwelvePointMarginsOnSmallScreens() {
+    let visibleFrame = CGRect(x: 0, y: 24, width: 500, height: 400)
+    let frame = MainPanelLayout.frame(
+        for: .searchResults,
+        in: visibleFrame,
+        requestedSize: CGSize(width: 800, height: 600)
+    )
+
+    #expect(frame.size == CGSize(width: 476, height: 376))
+    #expect(frame.minX == visibleFrame.minX + 12)
+    #expect(frame.minY == visibleFrame.minY + 12)
+    #expect(frame.maxY == visibleFrame.maxY - 12)
+}
+
 @Test func panelFrameCentersRequestedSizeInVisibleFrame() {
     let visibleFrame = CGRect(x: 100, y: 50, width: 1440, height: 860)
     let frame = MainPanelLayout.centeredFrame(

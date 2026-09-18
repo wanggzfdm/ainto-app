@@ -94,6 +94,34 @@ final class SearchViewModelContextTests: XCTestCase {
         XCTAssertFalse(viewModel.hasClipboardText)
     }
 
+    func testClipboardContextIsConsumedOnlyOncePerChangeCount() {
+        let viewModel = SearchViewModel()
+
+        XCTAssertTrue(viewModel.consumeClipboardContextIfNeeded("terminal", changeCount: 10))
+        XCTAssertTrue(viewModel.hasClipboardText)
+        XCTAssertFalse(viewModel.consumeClipboardContextIfNeeded("terminal", changeCount: 10))
+        XCTAssertFalse(viewModel.hasClipboardText)
+    }
+
+    func testNewChangeCountReactivatesIdenticalClipboardText() {
+        let viewModel = SearchViewModel()
+
+        XCTAssertTrue(viewModel.consumeClipboardContextIfNeeded("terminal", changeCount: 10))
+        XCTAssertTrue(viewModel.consumeClipboardContextIfNeeded("terminal", changeCount: 11))
+        XCTAssertTrue(viewModel.hasClipboardText)
+    }
+
+    func testClearingClipboardContextRemovesTextAndJSONContext() {
+        let viewModel = SearchViewModel()
+        _ = viewModel.consumeClipboardContextIfNeeded("terminal", changeCount: 10)
+
+        viewModel.clearClipboardContext()
+
+        XCTAssertFalse(viewModel.hasClipboardText)
+        XCTAssertFalse(viewModel.hasClipboardJSON)
+        XCTAssertTrue(viewModel.results.isEmpty)
+    }
+
     func testWhitespaceClipboardClearsTextAndJSONContexts() {
         let viewModel = SearchViewModel()
         viewModel.updateClipboardContext("terminal")

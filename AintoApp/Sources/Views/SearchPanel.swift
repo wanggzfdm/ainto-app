@@ -120,7 +120,11 @@ final class SearchPanel: NSPanel {
         previousApp = NSWorkspace.shared.frontmostApplication
         viewModel.loadAISettings()
         viewModel.selectAll()
-        viewModel.updateClipboardContext(NSPasteboard.general.string(forType: .string))
+        let pasteboard = NSPasteboard.general
+        _ = viewModel.consumeClipboardContextIfNeeded(
+            pasteboard.string(forType: .string),
+            changeCount: pasteboard.changeCount
+        )
         if !PanelPresentation.shouldDeferPresentationUntilIndexReady() {
             presentPanel()
         }
@@ -134,7 +138,8 @@ final class SearchPanel: NSPanel {
         let screen = screenUnderMouse()
         if let screen {
             let frameSize = MainPanelLayout.size(for: mainPanelState, itemCount: mainPanelItemCount)
-            let panelFrame = MainPanelLayout.centeredFrame(
+            let panelFrame = MainPanelLayout.frame(
+                for: mainPanelState,
                 in: screen.visibleFrame,
                 requestedSize: frameSize
             )
@@ -184,7 +189,8 @@ final class SearchPanel: NSPanel {
         let screen = screenUnderMouse()
         let availableFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 800)
         let desiredSize = MainPanelLayout.size(for: state, itemCount: mainPanelItemCount)
-        let panelFrame = MainPanelLayout.centeredFrame(
+        let panelFrame = MainPanelLayout.frame(
+            for: state,
             in: availableFrame,
             requestedSize: desiredSize
         )
@@ -408,6 +414,17 @@ final class SearchPanel: NSPanel {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let keyCode = Int(event.keyCode)
             let hasCmd = flags.contains(.command)
+
+            // A visible clipboard chip is dismissed by Backspace without changing the system pasteboard.
+            if keyCode == 51,
+               self.viewModel.page == .main,
+               self.viewModel.searchMode == .apps,
+               self.viewModel.query.isEmpty,
+               self.viewModel.hasClipboardText {
+                self.viewModel.clearClipboardContext()
+                self.resizePanel(for: self.mainPanelState)
+                return nil
+            }
 
             // Forward standard text editing shortcuts to first responder.
             // NonActivatingPanel doesn't receive Edit menu actions automatically.

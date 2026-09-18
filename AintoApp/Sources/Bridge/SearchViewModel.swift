@@ -192,6 +192,7 @@ final class SearchViewModel: ObservableObject {
     @Published var isJSONFormatterExpanded = false
     @Published var shouldOpenJSONFormatterWindow = false
     private var clipboardJSON: String?
+    private var lastConsumedClipboardChangeCount: Int?
     var clipboardText: String?
     let pluginRegistry: PluginRegistry
     let pluginPermissionStore: PluginPermissionStore
@@ -272,6 +273,26 @@ final class SearchViewModel: ObservableObject {
             }
             selectedIndex = min(selectedIndex, max(results.count - 1, 0))
         }
+    }
+
+    /// Consume clipboard context only once for each system pasteboard version.
+    func consumeClipboardContextIfNeeded(_ text: String?, changeCount: Int) -> Bool {
+        guard lastConsumedClipboardChangeCount != changeCount else {
+            clearClipboardContext()
+            return false
+        }
+        lastConsumedClipboardChangeCount = changeCount
+        updateClipboardContext(text)
+        return true
+    }
+
+    /// Clear clipboard-derived state without touching the system pasteboard.
+    func clearClipboardContext() {
+        clipboardText = nil
+        clipboardJSON = nil
+        results = []
+        selectedIndex = 0
+        onResultsChanged?()
     }
 
     func updateClipboardContext(_ text: String?) {
