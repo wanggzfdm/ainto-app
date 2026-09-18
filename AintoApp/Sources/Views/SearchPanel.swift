@@ -587,6 +587,15 @@ final class SearchPanel: NSPanel {
                 }
                 return event
             case 125: // Down arrow
+                if self.viewModel.page == .main,
+                   self.viewModel.searchMode == .apps,
+                   self.viewModel.query.isEmpty,
+                   !self.viewModel.hasClipboardText,
+                   !self.viewModel.hasClipboardJSON,
+                   !self.viewModel.isApplicationGridExpanded {
+                    self.viewModel.openApplicationLaunchpad()
+                    return nil
+                }
                 if self.viewModel.page == .main, self.viewModel.searchMode == .apps {
                     self.moveGridSelection(.down)
                 } else {
@@ -594,6 +603,13 @@ final class SearchPanel: NSPanel {
                 }
                 return nil
             case 126: // Up arrow
+                if self.viewModel.page == .main,
+                   self.viewModel.searchMode == .apps,
+                   self.viewModel.query.isEmpty,
+                   self.viewModel.isApplicationGridExpanded {
+                    self.viewModel.closeApplicationLaunchpad()
+                    return nil
+                }
                 if self.viewModel.page == .main, self.viewModel.searchMode == .apps {
                     self.moveGridSelection(.up)
                 } else {
@@ -621,6 +637,8 @@ final class SearchPanel: NSPanel {
                     if wasPlugin { self.restoreSizeAfterPlugin() }
                 } else if self.viewModel.isJSONFormatterExpanded {
                     self.viewModel.collapseJSONFormatter()
+                } else if self.viewModel.isApplicationGridExpanded {
+                    self.viewModel.closeApplicationLaunchpad()
                 } else if self.viewModel.query.isEmpty {
                     self.hidePanel()
                 } else {

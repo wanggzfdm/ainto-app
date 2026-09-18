@@ -88,7 +88,7 @@ struct MainView: View {
 
             if !viewModel.isJSONFormatterExpanded,
                viewModel.searchMode == .apps,
-               !(viewModel.query.isEmpty && !viewModel.hasClipboardJSON && !viewModel.hasClipboardText) {
+               !(viewModel.query.isEmpty && !viewModel.hasClipboardJSON && !viewModel.hasClipboardText && !viewModel.isApplicationGridExpanded) {
                 resultHeader
                 if viewModel.query.isEmpty {
                     applicationGrids

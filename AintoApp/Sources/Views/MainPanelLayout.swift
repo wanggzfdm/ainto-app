@@ -21,6 +21,7 @@ enum MainPanelLayout {
     ) -> MainPanelContentState {
         if isJSONFormatterExpanded { return .jsonFormatter }
         if !queryIsEmpty { return .searchResults }
+        if queryIsEmpty && isApplicationGridExpanded { return .expandedApplications }
         if queryIsEmpty && !hasClipboardJSON && !hasClipboardText { return .inputOnly }
         if queryIsEmpty && hasClipboardText { return .searchResults }
         if itemCount == 0 { return .searchOnly }

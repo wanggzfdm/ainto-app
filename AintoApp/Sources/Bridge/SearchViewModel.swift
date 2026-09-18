@@ -426,6 +426,18 @@ final class SearchViewModel: ObservableObject {
         onApplicationGridExpansionChanged?()
     }
 
+    func openApplicationLaunchpad() {
+        query = ""
+        clearClipboardContext()
+        isApplicationGridExpanded = true
+        selectedIndex = 0
+        onApplicationGridExpansionChanged?()
+    }
+
+    func closeApplicationLaunchpad() {
+        setApplicationGridExpanded(false)
+    }
+
     func resetApplicationGridExpansion() {
         isApplicationGridExpanded = false
         selectedIndex = 0
@@ -534,6 +546,20 @@ final class SearchViewModel: ObservableObject {
     func performSearch(query: String) {
         guard !query.isEmpty else {
             results = buildDefaultResults()
+            selectedIndex = 0
+            onResultsChanged?()
+            return
+        }
+
+        if query == "/apps" {
+            results = [SearchResult(
+                title: "打开启动台",
+                subtitle: "应用启动台",
+                icon: nil,
+                systemIcon: "square.grid.3x3"
+            ) { [weak self] in
+                self?.openApplicationLaunchpad()
+            }]
             selectedIndex = 0
             onResultsChanged?()
             return

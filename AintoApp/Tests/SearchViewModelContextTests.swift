@@ -3,6 +3,36 @@ import XCTest
 
 @MainActor
 final class SearchViewModelContextTests: XCTestCase {
+    func testAppsCommandShowsOnlyLaunchpadAction() {
+        let viewModel = SearchViewModel()
+
+        viewModel.updateQuery("/apps")
+
+        XCTAssertEqual(viewModel.results.count, 1)
+        XCTAssertEqual(viewModel.results.first?.title, "打开启动台")
+    }
+
+    func testAppsCommandActionExpandsLaunchpadAndClearsQueryAndClipboardContext() {
+        let viewModel = SearchViewModel()
+        viewModel.updateClipboardContext("clipboard text")
+        viewModel.updateQuery("/apps")
+
+        viewModel.results.first?.action()
+
+        XCTAssertEqual(viewModel.query, "")
+        XCTAssertTrue(viewModel.isApplicationGridExpanded)
+        XCTAssertFalse(viewModel.hasClipboardText)
+        XCTAssertFalse(viewModel.hasClipboardJSON)
+    }
+
+    func testAppsCommandRequiresExactQuery() {
+        let viewModel = SearchViewModel()
+
+        viewModel.updateQuery("/apps Terminal")
+
+        XCTAssertFalse(viewModel.results.contains { $0.title == "打开启动台" })
+    }
+
     func testValidClipboardJSONAddsContextCommandAndPrefillsEditor() {
         let viewModel = SearchViewModel()
         let json = "  {\n  \"name\": \"Ainto\"\n}  "
@@ -120,6 +150,16 @@ final class SearchViewModelContextTests: XCTestCase {
         XCTAssertFalse(viewModel.hasClipboardText)
         XCTAssertFalse(viewModel.hasClipboardJSON)
         XCTAssertTrue(viewModel.results.isEmpty)
+    }
+
+    func testClosingApplicationLaunchpadReturnsToDefaultInputState() {
+        let viewModel = SearchViewModel()
+        viewModel.openApplicationLaunchpad()
+
+        viewModel.closeApplicationLaunchpad()
+
+        XCTAssertFalse(viewModel.isApplicationGridExpanded)
+        XCTAssertEqual(viewModel.query, "")
     }
 
     func testWhitespaceClipboardClearsTextAndJSONContexts() {

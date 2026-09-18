@@ -37,6 +37,20 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 58))
 }
 
+@Test func emptyQueryWithExpandedGridUsesLaunchpadLayoutEvenWithoutClipboardContext() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: true,
+        hasClipboardJSON: false,
+        hasClipboardText: false,
+        itemCount: 8,
+        isApplicationGridExpanded: true
+    )
+
+    #expect(state == .expandedApplications)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
+}
+
 @Test func emptyQueryWithClipboardTextUsesExpandedSearchResultsLayout() {
     let state = MainPanelLayout.contentState(
         isJSONFormatterExpanded: false,
