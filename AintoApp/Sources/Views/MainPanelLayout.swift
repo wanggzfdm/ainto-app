@@ -5,6 +5,8 @@ enum MainPanelContentState {
     case inputOnly
     case searchOnly
     case searchResults
+    case compactSearchResults
+    case expandedSearchResults
     case collapsedApplications
     case expandedApplications
     case jsonFormatter
@@ -17,13 +19,16 @@ enum MainPanelLayout {
         hasClipboardJSON: Bool = false,
         hasClipboardText: Bool = false,
         itemCount: Int,
-        isApplicationGridExpanded: Bool = false
+        isApplicationGridExpanded: Bool = false,
+        isSearchResultsExpanded: Bool = false
     ) -> MainPanelContentState {
         if isJSONFormatterExpanded { return .jsonFormatter }
-        if !queryIsEmpty { return .searchResults }
+        if !queryIsEmpty {
+            return isSearchResultsExpanded ? .expandedSearchResults : .compactSearchResults
+        }
         if queryIsEmpty && isApplicationGridExpanded { return .expandedApplications }
         if queryIsEmpty && !hasClipboardJSON && !hasClipboardText { return .inputOnly }
-        if queryIsEmpty && hasClipboardText { return .searchResults }
+        if queryIsEmpty && hasClipboardText { return .compactSearchResults }
         if itemCount == 0 { return .searchOnly }
         return isApplicationGridExpanded ? .expandedApplications : .collapsedApplications
     }
@@ -57,10 +62,13 @@ enum MainPanelLayout {
         margin: CGFloat = 12
     ) -> CGRect {
         let centered = centeredFrame(in: visibleFrame, requestedSize: requestedSize, margin: margin)
-        guard state == .inputOnly else { return centered }
+        guard state == .inputOnly || state == .compactSearchResults else { return centered }
         let minY = visibleFrame.minY + margin
         let maxY = visibleFrame.maxY - margin - centered.height
-        let anchoredY = visibleFrame.maxY - visibleFrame.height * searchBarCenterHeightRatio - 29
+        let searchBarTop = visibleFrame.maxY - visibleFrame.height * searchBarCenterHeightRatio - 29
+        let anchoredY = state == .compactSearchResults
+            ? searchBarTop - (centered.height - 58)
+            : searchBarTop
         let y = min(max(anchoredY, minY), maxY)
         return CGRect(
             x: centered.minX,
@@ -76,8 +84,10 @@ enum MainPanelLayout {
             return CGSize(width: 800, height: 58)
         case .searchOnly, .collapsedApplications:
             return CGSize(width: 800, height: 600)
-        case .searchResults:
+        case .searchResults, .expandedSearchResults:
             return CGSize(width: 800, height: 600)
+        case .compactSearchResults:
+            return CGSize(width: 800, height: 240)
         case .expandedApplications:
             return CGSize(width: 800, height: 600)
         case .jsonFormatter:

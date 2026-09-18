@@ -184,6 +184,7 @@ final class SearchViewModel: ObservableObject {
     @Published var allApplications: [SearchResult] = []
     @Published var isApplicationIndexReady = false
     @Published var isApplicationGridExpanded = false
+    @Published var isSearchResultsExpanded = false
     @Published var selectedIndex: Int = 0
     @Published var shouldSelectAll = false
     @Published var page: LauncherPage = .main
@@ -334,6 +335,7 @@ final class SearchViewModel: ObservableObject {
     /// Update the query and its results in the same input event, avoiding a deferred view update.
     func updateQuery(_ newQuery: String) {
         guard query != newQuery else { return }
+        isSearchResultsExpanded = false
         if !newQuery.isEmpty {
             clipboardText = nil
             clipboardJSON = nil
@@ -406,6 +408,18 @@ final class SearchViewModel: ObservableObject {
         return applications
     }
 
+    var compactSearchResults: [SearchResult] {
+        ApplicationGridPresentation.visibleItems(
+            from: results,
+            isExpanded: false,
+            columnCount: MainSearchGridMetrics.columnCount
+        )
+    }
+
+    var hasMoreSearchResults: Bool {
+        results.count > compactSearchResults.count
+    }
+
     var launchpadApplicationResults: [SearchResult] {
         guard query.isEmpty, isApplicationIndexReady else { return [] }
         return allApplications
@@ -426,8 +440,19 @@ final class SearchViewModel: ObservableObject {
         onApplicationGridExpansionChanged?()
     }
 
+    func openExpandedSearchResults() {
+        guard !query.isEmpty else { return }
+        isSearchResultsExpanded = true
+        selectedIndex = 0
+    }
+
+    func closeExpandedSearchResults() {
+        isSearchResultsExpanded = false
+    }
+
     func openApplicationLaunchpad() {
         query = ""
+        isSearchResultsExpanded = false
         clearClipboardContext()
         isApplicationGridExpanded = true
         selectedIndex = 0
@@ -440,10 +465,12 @@ final class SearchViewModel: ObservableObject {
 
     func resetApplicationGridExpansion() {
         isApplicationGridExpanded = false
+        isSearchResultsExpanded = false
         selectedIndex = 0
     }
 
     func clearQuery() {
+        isSearchResultsExpanded = false
         query = ""
         results = []
         selectedIndex = 0

@@ -51,7 +51,7 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
 }
 
-@Test func emptyQueryWithClipboardTextUsesExpandedSearchResultsLayout() {
+@Test func emptyQueryWithClipboardTextUsesCompactSearchResultsLayout() {
     let state = MainPanelLayout.contentState(
         isJSONFormatterExpanded: false,
         queryIsEmpty: true,
@@ -60,8 +60,8 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         itemCount: 1
     )
 
-    #expect(state == .searchResults)
-    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
+    #expect(state == .compactSearchResults)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 240))
 }
 
 @Test func emptyQueryWithClipboardJSONKeepsExpandedMainPanel() {
@@ -76,6 +76,38 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
     #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
 }
 
+@Test func normalSearchUsesCompactSearchResultsLayout() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: false,
+        itemCount: 1,
+        isSearchResultsExpanded: false
+    )
+
+    #expect(state == .compactSearchResults)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 240))
+}
+
+@Test func expandedSearchUsesFullHeightLayout() {
+    let state = MainPanelLayout.contentState(
+        isJSONFormatterExpanded: false,
+        queryIsEmpty: false,
+        itemCount: 20,
+        isSearchResultsExpanded: true
+    )
+
+    #expect(state == .expandedSearchResults)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
+}
+
+@Test func compactSearchResultsKeepInputOnlySearchBarTop() {
+    let visibleFrame = CGRect(x: 0, y: 24, width: 1440, height: 1200)
+    let inputOnly = MainPanelLayout.frame(for: .inputOnly, in: visibleFrame, requestedSize: CGSize(width: 800, height: 58))
+    let compact = MainPanelLayout.frame(for: .compactSearchResults, in: visibleFrame, requestedSize: CGSize(width: 800, height: 240))
+
+    #expect(compact.maxY == inputOnly.maxY)
+}
+
 @Test func nonEmptyQueryUsesSearchResultsInsteadOfInputOnly() {
     let state = MainPanelLayout.contentState(
         isJSONFormatterExpanded: false,
@@ -84,8 +116,8 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
         itemCount: 0
     )
 
-    #expect(state == .searchResults)
-    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 600))
+    #expect(state == .compactSearchResults)
+    #expect(MainPanelLayout.size(for: state) == CGSize(width: 800, height: 240))
 }
 
 @Test func noMatchQueryUsesSearchResultsLayout() {
@@ -94,7 +126,7 @@ func searchResultsKeepStableTwoRowHeight(itemCount: Int) {
             isJSONFormatterExpanded: false,
             queryIsEmpty: false,
             itemCount: 0
-        ) == .searchResults
+        ) == .compactSearchResults
     )
 }
 

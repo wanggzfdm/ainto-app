@@ -156,7 +156,8 @@ final class SearchPanel: NSPanel {
             hasClipboardJSON: viewModel.hasClipboardJSON,
             hasClipboardText: viewModel.hasClipboardText,
             itemCount: viewModel.displayedApplicationResults.count,
-            isApplicationGridExpanded: viewModel.isApplicationGridExpanded
+            isApplicationGridExpanded: viewModel.isApplicationGridExpanded,
+            isSearchResultsExpanded: viewModel.isSearchResultsExpanded
         )
     }
 
@@ -604,6 +605,11 @@ final class SearchPanel: NSPanel {
                 return nil
             case 126: // Up arrow
                 if self.viewModel.page == .main,
+                   self.viewModel.isSearchResultsExpanded {
+                    self.viewModel.closeExpandedSearchResults()
+                    return nil
+                }
+                if self.viewModel.page == .main,
                    self.viewModel.searchMode == .apps,
                    self.viewModel.query.isEmpty,
                    self.viewModel.isApplicationGridExpanded {
@@ -637,6 +643,8 @@ final class SearchPanel: NSPanel {
                     if wasPlugin { self.restoreSizeAfterPlugin() }
                 } else if self.viewModel.isJSONFormatterExpanded {
                     self.viewModel.collapseJSONFormatter()
+                } else if self.viewModel.isSearchResultsExpanded {
+                    self.viewModel.closeExpandedSearchResults()
                 } else if self.viewModel.isApplicationGridExpanded {
                     self.viewModel.closeApplicationLaunchpad()
                 } else if self.viewModel.query.isEmpty {

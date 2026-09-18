@@ -258,25 +258,48 @@ struct MainView: View {
     }
 
     private var searchResultPage: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: true) {
-                applicationGrid(
-                    results: viewModel.results,
-                    columnCount: MainSearchGridMetrics.columnCount,
-                    spacing: 8,
-                    iconSize: 40,
-                    itemHeight: 68,
-                    titleFontSize: 11
-                )
-            }
-            .frame(height: searchResultViewportHeight)
-            .clipped()
-            .onChange(of: viewModel.selectedIndex) { _, newIndex in
-                if viewModel.results.indices.contains(newIndex) {
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo(viewModel.results[newIndex].stableID, anchor: .center)
+        Group {
+            if viewModel.isSearchResultsExpanded {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        applicationGrid(
+                            results: viewModel.results,
+                            columnCount: ApplicationGridPresentation.expandedColumnCount,
+                            spacing: ApplicationGridPresentation.expandedGridSpacing,
+                            iconSize: ApplicationGridPresentation.expandedIconSize,
+                            itemHeight: ApplicationGridPresentation.expandedItemHeight,
+                            titleFontSize: 12
+                        )
+                    }
+                    .frame(height: searchResultViewportHeight)
+                    .clipped()
+                    .onChange(of: viewModel.selectedIndex) { _, newIndex in
+                        if viewModel.results.indices.contains(newIndex) {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                proxy.scrollTo(viewModel.results[newIndex].stableID, anchor: .center)
+                            }
+                        }
                     }
                 }
+            } else {
+                VStack(spacing: 8) {
+                    applicationGrid(
+                        results: viewModel.compactSearchResults,
+                        columnCount: MainSearchGridMetrics.columnCount,
+                        spacing: 8,
+                        iconSize: 40,
+                        itemHeight: 68,
+                        titleFontSize: 11
+                    )
+                    if viewModel.hasMoreSearchResults {
+                        Button("更多（\(viewModel.results.count)）") {
+                            viewModel.openExpandedSearchResults()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(height: ApplicationGridPresentation.compactViewportHeight, alignment: .top)
+                .clipped()
             }
         }
     }

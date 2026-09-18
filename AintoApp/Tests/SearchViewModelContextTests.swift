@@ -152,6 +152,38 @@ final class SearchViewModelContextTests: XCTestCase {
         XCTAssertTrue(viewModel.results.isEmpty)
     }
 
+    func testClosingExpandedSearchResultsPreservesQuery() {
+        let viewModel = SearchViewModel()
+        viewModel.updateQuery("terminal")
+
+        viewModel.openExpandedSearchResults()
+        viewModel.closeExpandedSearchResults()
+
+        XCTAssertEqual(viewModel.query, "terminal")
+        XCTAssertFalse(viewModel.isSearchResultsExpanded)
+    }
+
+    func testChangingQueryClosesExpandedSearchResults() {
+        let viewModel = SearchViewModel()
+        viewModel.updateQuery("terminal")
+        viewModel.openExpandedSearchResults()
+
+        viewModel.updateQuery("safari")
+
+        XCTAssertFalse(viewModel.isSearchResultsExpanded)
+    }
+
+    func testOpeningApplicationLaunchpadClosesExpandedSearchResults() {
+        let viewModel = SearchViewModel()
+        viewModel.updateQuery("terminal")
+        viewModel.openExpandedSearchResults()
+
+        viewModel.openApplicationLaunchpad()
+
+        XCTAssertFalse(viewModel.isSearchResultsExpanded)
+        XCTAssertTrue(viewModel.isApplicationGridExpanded)
+    }
+
     func testClosingApplicationLaunchpadReturnsToDefaultInputState() {
         let viewModel = SearchViewModel()
         viewModel.openApplicationLaunchpad()

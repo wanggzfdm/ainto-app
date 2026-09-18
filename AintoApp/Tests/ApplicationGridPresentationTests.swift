@@ -14,6 +14,15 @@ import Testing
     #expect(ApplicationGridPresentation.expandedViewportHeight == 420)
 }
 
+@Test func compactSearchResultsShowAtMostTwoRows() {
+    let visible = ApplicationGridPresentation.visibleItems(
+        from: Array(0..<20),
+        isExpanded: false,
+        columnCount: MainSearchGridMetrics.columnCount
+    )
+    #expect(visible == Array(0..<14))
+}
+
 @Test func expandedApplicationGridUsesLargerLaunchpadMetrics() {
     #expect(ApplicationGridPresentation.expandedColumnCount == 5)
     #expect(ApplicationGridPresentation.expandedIconSize == 64)
